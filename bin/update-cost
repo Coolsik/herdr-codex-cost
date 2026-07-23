@@ -5,6 +5,7 @@ herdr_bin="${HERDR_BIN_PATH:-herdr}"
 plugin_root="${HERDR_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 state_dir="${HERDR_PLUGIN_STATE_DIR:-${TMPDIR:-/tmp}/herdr-codex-cost-${UID:-user}}"
 mode="${1:-}"
+target_pane="${2:-}"
 
 json_env() {
   local value="${!1:-}"
@@ -20,10 +21,10 @@ pane_ids() {
       json_env HERDR_PLUGIN_EVENT_JSON | jq -r '.data.pane_id // empty'
       ;;
     --pane)
-      printf '%s\n' "${2:-}"
+      printf '%s\n' "$target_pane"
       ;;
     --poll)
-      printf '%s\n' "${2:-}"
+      printf '%s\n' "$target_pane"
       ;;
     *)
       json_env HERDR_PLUGIN_CONTEXT_JSON | jq -r '.focused_pane_id // .pane_id // empty'

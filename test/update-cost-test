@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fixture="$(mktemp -d)"
+trap 'rm -rf "$fixture"' EXIT
+
+mkdir -p "$fixture/plugin/bin" "$fixture/state"
+
+cat > "$fixture/herdr" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$HERDR_CAPTURE"
+case "$1 $2" in
+  "pane get")
+    printf '{"result":{"pane":{"pane_id":"%s","agent":"codex","agent_session":{"agent":"codex","kind":"id","value":"session-1"}}}}\n' "$3"
+    ;;
+  "pane report-metadata") ;;
+  *) exit 1 ;;
+esac
+SH
+chmod +x "$fixture/herdr"
+
+cat > "$fixture/plugin/bin/codex-cost" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$COST_CAPTURE"
+printf '%s\n' '~$1.23'
+SH
+chmod +x "$fixture/plugin/bin/codex-cost"
+
+run_update() {
+  HERDR_CAPTURE="$fixture/herdr-calls" \
+    COST_CAPTURE="$fixture/cost-calls" \
+    HERDR_BIN_PATH="$fixture/herdr" \
+    HERDR_PLUGIN_ROOT="$fixture/plugin" \
+    HERDR_PLUGIN_STATE_DIR="$fixture/state" \
+    "$root/bin/update-cost" "$@"
+}
+
+run_update --pane w1:p7
+grep -Fx -- 'pane get w1:p7' "$fixture/herdr-calls" >/dev/null
+grep -Fx -- 'pane report-metadata w1:p7 --source herdr-codex-cost --token cost=~$1.23' "$fixture/herdr-calls" >/dev/null
+grep -E -- '^--session session-1 --cache-file .*/cost-[0-9]+\.json$' "$fixture/cost-calls" >/dev/null
+
+: > "$fixture/herdr-calls"
+: > "$fixture/cost-calls"
+run_update --poll w1:p8
+grep -Fx -- 'pane get w1:p8' "$fixture/herdr-calls" >/dev/null
+grep -Fx -- 'pane report-metadata w1:p8 --source herdr-codex-cost --token cost=~$1.23' "$fixture/herdr-calls" >/dev/null
+grep -E -- '^--session session-1 --cache-file .*/cost-[0-9]+\.json --changed-only$' "$fixture/cost-calls" >/dev/null
+
+printf 'update cost tests passed\n'

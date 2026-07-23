@@ -62,6 +62,7 @@ herdr plugin action invoke dev.herdr-codex-cost.refresh
 ./test/codex-cost-test
 ./test/codex-hook-test
 ./test/poll-cost-test
+./test/update-cost-test
 ```
 
 ## 배포
