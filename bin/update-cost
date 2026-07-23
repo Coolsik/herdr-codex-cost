@@ -3,7 +3,13 @@ set -euo pipefail
 
 herdr_bin="${HERDR_BIN_PATH:-herdr}"
 plugin_root="${HERDR_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+state_dir="${HERDR_PLUGIN_STATE_DIR:-${TMPDIR:-/tmp}/herdr-codex-cost-${UID:-user}}"
 mode="${1:-}"
+
+json_env() {
+  local value="${!1:-}"
+  [ -n "$value" ] && printf '%s\n' "$value" || printf '{}\n'
+}
 
 pane_ids() {
   case "$mode" in
@@ -11,19 +17,23 @@ pane_ids() {
       "$herdr_bin" pane list | jq -r '.result.panes[]? | select((.agent // "") == "codex") | .pane_id'
       ;;
     --event)
-      jq -r '.data.pane_id // empty' <<< "${HERDR_PLUGIN_EVENT_JSON:-{}}"
+      json_env HERDR_PLUGIN_EVENT_JSON | jq -r '.data.pane_id // empty'
       ;;
     --pane)
       printf '%s\n' "${2:-}"
       ;;
+    --poll)
+      printf '%s\n' "${2:-}"
+      ;;
     *)
-      jq -r '.focused_pane_id // .pane_id // empty' <<< "${HERDR_PLUGIN_CONTEXT_JSON:-{}}"
+      json_env HERDR_PLUGIN_CONTEXT_JSON | jq -r '.focused_pane_id // .pane_id // empty'
       ;;
   esac
 }
 
 update_pane() {
-  local pane_id="$1" pane_json agent session_id cost
+  local pane_id="$1" pane_json agent session_id pane_key cache_file cost
+  local -a cost_args
   [ -n "$pane_id" ] || return 0
   pane_json="$("$herdr_bin" pane get "$pane_id" 2>/dev/null || true)"
   agent="$(jq -r '.result.pane.agent // empty' <<< "$pane_json")"
@@ -36,7 +46,15 @@ update_pane() {
     "$herdr_bin" pane report-metadata "$pane_id" --source herdr-codex-cost --token 'cost=…' >/dev/null
     return 0
   fi
-  cost="$("$plugin_root/bin/codex-cost" --session "$session_id")"
+  mkdir -p "$state_dir"
+  pane_key="$(printf '%s' "$pane_id" | cksum | awk '{print $1}')"
+  cache_file="$state_dir/cost-$pane_key.json"
+  cost_args=("$plugin_root/bin/codex-cost" --session "$session_id" --cache-file "$cache_file")
+  [ "$mode" = "--poll" ] && cost_args+=(--changed-only)
+  cost="$("${cost_args[@]}")"
+  if [ "$mode" = "--poll" ] && [ -z "$cost" ]; then
+    return 0
+  fi
   [ -n "$cost" ] || cost='…'
   "$herdr_bin" pane report-metadata "$pane_id" --source herdr-codex-cost --token "cost=$cost" >/dev/null
 }

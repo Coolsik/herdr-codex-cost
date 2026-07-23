@@ -15,12 +15,16 @@
 ```bash
 herdr plugin install Coolsik/herdr-codex-cost
 herdr integration install codex
-herdr plugin action invoke dev.herdr-codex-cost.setup-hooks
 ```
 
 로컬 개발 시에는 `herdr plugin install` 대신 `herdr plugin link "$PWD"`를
-사용합니다. hook 설치 후 이미 실행 중인 Codex 프로세스는 재시작해야 합니다.
-Codex가 새 hook을 처음 읽을 때 실행 승인을 요청할 수 있습니다.
+사용합니다.
+
+0.2.x 버전에서 업데이트했다면 기존 cost용 Codex hook을 한 번 제거합니다.
+
+```bash
+herdr plugin action invoke dev.herdr-codex-cost.remove-hooks
+```
 
 `~/.config/herdr/config.toml`의 Codex sidebar row에 `$cost`를 추가합니다. 예:
 
@@ -36,27 +40,18 @@ codex = [
 
 ## 비용 갱신
 
-다음 Codex 실행 경계에서 비용이 자동으로 갱신됩니다.
+Herdr가 Codex pane을 `working`으로 표시하는 동안 5초마다 비용을 갱신합니다.
+pane이 `working` 상태를 벗어나면 polling을 중단하고 상태 변경 시 마지막으로
+한 번 갱신합니다.
 
-- tool 실행 직전 (`PreToolUse`)
-- 하위 에이전트 종료 (`SubagentStop`)
-- Herdr가 에이전트 상태 변화를 감지했을 때(최종 `working` → `done` 포함)
-
-hook 기반 갱신은 pane별로 최대 5초에 한 번만 실행됩니다. 5초 안에 tool이
-여러 번 호출돼도 세션 로그를 다시 읽지 않습니다. 메인 작업의 최종 비용은
-Herdr 상태 변경 이벤트가 갱신합니다.
+각 pane은 rollout 경로, 파일 크기, 수정 시각으로 구성된 세션 트리 fingerprint를
+캐시합니다. polling 중 fingerprint가 그대로면 token event를 다시 파싱하거나
+sidebar metadata를 갱신하지 않고 기존 비용을 재사용합니다.
 
 현재 pane을 즉시 수동 갱신할 수도 있습니다.
 
 ```bash
 herdr plugin action invoke dev.herdr-codex-cost.refresh
-```
-
-플러그인을 삭제하기 전에는 이 플러그인이 추가한 Codex hook만 먼저 제거합니다.
-
-```bash
-herdr plugin action invoke dev.herdr-codex-cost.remove-hooks
-herdr plugin uninstall dev.herdr-codex-cost
 ```
 
 표시값의 `~`는 계산 완료, `!!`는 미등록 모델·손상된 로그·누락된 하위 세션 때문에 일부 비용을 제외했음을 뜻합니다. 비공개 단가인 `codex-auto-review` 추정분은 `~$1.23(+$0.45)`처럼 분리합니다.
@@ -65,6 +60,8 @@ herdr plugin uninstall dev.herdr-codex-cost
 
 ```bash
 ./test/codex-cost-test
+./test/codex-hook-test
+./test/poll-cost-test
 ```
 
 ## 배포

@@ -1,12 +1,12 @@
 id = "dev.herdr-codex-cost"
 name = "Codex Cost"
-version = "0.2.1"
+version = "0.3.0"
 min_herdr_version = "0.7.0"
 description = "Show each Codex pane's estimated session cost in the Herdr sidebar."
 platforms = ["linux", "macos"]
 
 [[startup]]
-command = ["bash", "bin/update-cost", "--all"]
+command = ["bash", "bin/poll-cost", "--startup"]
 
 [[actions]]
 id = "refresh"
@@ -15,15 +15,10 @@ contexts = ["pane"]
 command = ["bash", "bin/update-cost"]
 
 [[actions]]
-id = "setup-hooks"
-title = "Install Codex cost hooks"
-command = ["bash", "bin/manage-codex-hooks", "install"]
-
-[[actions]]
 id = "remove-hooks"
-title = "Remove Codex cost hooks"
+title = "Remove legacy Codex cost hooks"
 command = ["bash", "bin/manage-codex-hooks", "remove"]
 
 [[events]]
 on = "pane.agent_status_changed"
-command = ["bash", "bin/update-cost", "--event"]
+command = ["bash", "bin/poll-cost", "--event"]

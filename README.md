@@ -19,7 +19,6 @@ Install directly from GitHub:
 ```bash
 herdr plugin install Coolsik/herdr-codex-cost
 herdr integration install codex
-herdr plugin action invoke dev.herdr-codex-cost.setup-hooks
 ```
 
 For local development, link the checkout instead:
@@ -27,11 +26,13 @@ For local development, link the checkout instead:
 ```bash
 herdr plugin link "$PWD"
 herdr integration install codex
-herdr plugin action invoke dev.herdr-codex-cost.setup-hooks
 ```
 
-Restart running Codex processes after installing the hooks. Codex may ask you
-to approve the newly added hook commands the first time it loads them.
+If upgrading from version 0.2.x, remove its legacy Codex hooks once:
+
+```bash
+herdr plugin action invoke dev.herdr-codex-cost.remove-hooks
+```
 
 ## Sidebar configuration
 
@@ -49,28 +50,18 @@ Restart Herdr or reload its configuration.
 
 ## Cost refresh
 
-The plugin refreshes cost at useful Codex execution boundaries:
+When Herdr reports a Codex pane as `working`, the plugin refreshes it every five
+seconds. Polling stops as soon as the pane leaves `working`, and the status
+change triggers one final refresh.
 
-- Before a tool runs (`PreToolUse`)
-- When a descendant agent finishes (`SubagentStop`)
-- When Herdr observes an agent status change, including the final
-  `working` → `done` transition
-
-Hook-triggered updates are limited to once every five seconds per pane. Repeated
-tool calls inside that window do not rescan the session logs. Herdr's
-status-change event provides the final refresh after the main turn.
+Each pane caches its session-tree fingerprint from rollout paths, file sizes,
+and modification times. During polling, an unchanged fingerprint reuses the
+cached cost without parsing token events or updating sidebar metadata.
 
 You can refresh the currently focused pane manually at any time:
 
 ```bash
 herdr plugin action invoke dev.herdr-codex-cost.refresh
-```
-
-Before uninstalling the plugin, remove only the Codex hooks owned by this plugin:
-
-```bash
-herdr plugin action invoke dev.herdr-codex-cost.remove-hooks
-herdr plugin uninstall dev.herdr-codex-cost
 ```
 
 ## Display values
@@ -83,6 +74,8 @@ herdr plugin uninstall dev.herdr-codex-cost
 
 ```bash
 ./test/codex-cost-test
+./test/codex-hook-test
+./test/poll-cost-test
 ```
 
 ## Publishing

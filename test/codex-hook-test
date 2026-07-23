@@ -10,6 +10,7 @@ printf '%s\n' '{
   "custom": true,
   "hooks": {
     "PreToolUse": [
+      {"hooks": [{"type": "command", "command": "HERDR_CODEX_COST_HOOK=1 printf legacy"}]},
       {"hooks": [{"type": "command", "command": "printf keep"}]}
     ],
     "Stop": [
@@ -26,17 +27,6 @@ run_manager() {
     "$root/bin/manage-codex-hooks" "$1" >/dev/null
 }
 
-run_manager install
-run_manager install
-jq -e '
-  .custom == true
-  and ([.hooks.PreToolUse[].hooks[] | select(.command | contains("HERDR_CODEX_COST_HOOK=1"))] | length == 1)
-  and ([.hooks.Stop[].hooks[] | select(.command | contains("HERDR_CODEX_COST_HOOK=1"))] | length == 0)
-  and ([.hooks.SubagentStop[].hooks[] | select(.command | contains("HERDR_CODEX_COST_HOOK=1"))] | length == 1)
-  and ([.hooks.PreToolUse[].hooks[] | select(.command == "printf keep")] | length == 1)
-  and ([.hooks.Stop[].hooks[] | select(.command == "printf keep-stop")] | length == 1)
-' "$fixture/codex/hooks.json" >/dev/null
-
 run_manager remove
 jq -e '
   .custom == true
@@ -46,26 +36,4 @@ jq -e '
   and (.hooks.SubagentStop == null)
 ' "$fixture/codex/hooks.json" >/dev/null
 
-mkdir -p "$fixture/plugin/bin"
-printf '%s\n' '#!/usr/bin/env bash' 'printf "update\n" >> "$HOOK_CAPTURE"' > "$fixture/plugin/bin/update-cost"
-chmod +x "$fixture/plugin/bin/update-cost"
-
-run_hook() {
-  printf '{}\n' | \
-    HOOK_CAPTURE="$fixture/updates" \
-    HERDR_ENV=1 \
-    HERDR_PANE_ID='w1:p1' \
-    HERDR_PLUGIN_ROOT="$fixture/plugin" \
-    HERDR_PLUGIN_STATE_DIR="$fixture/state" \
-    "$root/bin/codex-hook"
-}
-
-run_hook
-run_hook
-[ "$(wc -l < "$fixture/updates")" -eq 1 ]
-stamp="$(find "$fixture/state" -name 'hook-*.stamp' -print -quit)"
-printf '%s\n' "$(( $(date +%s) - 6 ))" > "$stamp"
-run_hook
-[ "$(wc -l < "$fixture/updates")" -eq 2 ]
-
-printf 'codex hook tests passed\n'
+printf 'legacy hook cleanup tests passed\n'

@@ -39,6 +39,16 @@ db.commit()
 PY
 assert_cost root '~$5.28'
 
+cache_file="$fixture/cost-cache.json"
+first_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
+second_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
+[ "$first_cached" = '~$5.28' ] || { printf 'initial cached cost mismatch: %s\n' "$first_cached" >&2; exit 1; }
+[ -z "$second_cached" ] || { printf 'unchanged cache should be silent: %s\n' "$second_cached" >&2; exit 1; }
+root_path="$(find "$fixture/sessions" -name '*-root.jsonl' -print -quit)"
+printf '%s\n' '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":2000000,"cached_input_tokens":400000,"output_tokens":20000}}}}' >> "$root_path"
+changed_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
+[ "$changed_cached" = '~$9.68' ] || { printf 'changed cached cost mismatch: %s\n' "$changed_cached" >&2; exit 1; }
+
 metadata_fixture="$(mktemp -d)"
 make_rollout_at() {
   local id="$1" parent="$2" model="$3" path

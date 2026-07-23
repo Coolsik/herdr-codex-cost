@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fixture="$(mktemp -d)"
+trap 'rm -rf "$fixture"' EXIT
+
+mkdir -p "$fixture/plugin/bin" "$fixture/state"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "%s\n" "$*" >> "$POLL_CAPTURE"' > "$fixture/plugin/bin/update-cost"
+chmod +x "$fixture/plugin/bin/update-cost"
+
+cat > "$fixture/herdr" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$1 $2" in
+  "pane get")
+    case "$3" in
+      w1:p1) printf '%s\n' '{"result":{"pane":{"pane_id":"w1:p1","agent":"codex","agent_status":"working"}}}' ;;
+      w1:p2) printf '%s\n' '{"result":{"pane":{"pane_id":"w1:p2","agent":"codex","agent_status":"done"}}}' ;;
+      *) exit 1 ;;
+    esac
+    ;;
+  "pane list")
+    printf '%s\n' '{"result":{"panes":[{"pane_id":"w1:p1","agent":"codex","agent_status":"working"},{"pane_id":"w1:p2","agent":"codex","agent_status":"done"}]}}'
+    ;;
+  *) exit 1 ;;
+esac
+SH
+chmod +x "$fixture/herdr"
+
+POLL_CAPTURE="$fixture/updates" \
+  HERDR_BIN_PATH="$fixture/herdr" \
+  HERDR_PLUGIN_ROOT="$fixture/plugin" \
+  HERDR_PLUGIN_STATE_DIR="$fixture/state" \
+  HERDR_CODEX_COST_POLL_ONCE=1 \
+  "$root/bin/poll-cost" --worker w1:p1
+grep -Fx -- '--poll w1:p1' "$fixture/updates" >/dev/null
+
+: > "$fixture/updates"
+POLL_CAPTURE="$fixture/updates" \
+  HERDR_BIN_PATH="$fixture/herdr" \
+  HERDR_PLUGIN_ROOT="$fixture/plugin" \
+  HERDR_PLUGIN_STATE_DIR="$fixture/state" \
+  HERDR_CODEX_COST_POLL_ONCE=1 \
+  "$root/bin/poll-cost" --worker w1:p2
+[ ! -s "$fixture/updates" ]
+
+POLL_CAPTURE="$fixture/updates" \
+  HERDR_BIN_PATH="$fixture/herdr" \
+  HERDR_PLUGIN_ROOT="$fixture/plugin" \
+  HERDR_PLUGIN_STATE_DIR="$fixture/state" \
+  HERDR_PLUGIN_EVENT_JSON='{"data":{"pane_id":"w1:p2"}}' \
+  "$root/bin/poll-cost" --event
+grep -Fx -- '--pane w1:p2' "$fixture/updates" >/dev/null
+
+: > "$fixture/updates"
+POLL_CAPTURE="$fixture/updates" \
+  HERDR_BIN_PATH="$fixture/herdr" \
+  HERDR_PLUGIN_ROOT="$fixture/plugin" \
+  HERDR_PLUGIN_STATE_DIR="$fixture/state" \
+  HERDR_CODEX_COST_POLL_ONCE=1 \
+  HERDR_PLUGIN_EVENT_JSON='{"data":{"pane_id":"w1:p1"}}' \
+  "$root/bin/poll-cost" --event
+for _ in $(seq 1 50); do
+  grep -Fx -- '--poll w1:p1' "$fixture/updates" >/dev/null 2>&1 && break
+  sleep 0.02
+done
+grep -Fx -- '--poll w1:p1' "$fixture/updates" >/dev/null
+for _ in $(seq 1 50); do
+  [ -z "$(find "$fixture/state" -name 'poll-*.lock' -print -quit)" ] && break
+  sleep 0.02
+done
+
+: > "$fixture/updates"
+POLL_CAPTURE="$fixture/updates" \
+  HERDR_BIN_PATH="$fixture/herdr" \
+  HERDR_PLUGIN_ROOT="$fixture/plugin" \
+  HERDR_PLUGIN_STATE_DIR="$fixture/state" \
+  HERDR_CODEX_COST_POLL_ONCE=1 \
+  HERDR_CODEX_COST_POLL_FOREGROUND=1 \
+  "$root/bin/poll-cost" --startup
+grep -Fx -- '--all' "$fixture/updates" >/dev/null
+grep -Fx -- '--poll w1:p1' "$fixture/updates" >/dev/null
+if grep -F -- 'w1:p2' "$fixture/updates" >/dev/null; then
+  printf 'startup polled a non-working pane\n' >&2
+  exit 1
+fi
+
+printf 'poll cost tests passed\n'
