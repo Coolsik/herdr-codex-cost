@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mode="${1:-}"
+case "$mode" in
+  install|remove) ;;
+  *) printf 'Usage: manage-codex-hooks install|remove\n' >&2; exit 2 ;;
+esac
+
+command -v python3 >/dev/null 2>&1 || {
+  printf 'python3 is required\n' >&2
+  exit 1
+}
+
+plugin_root="${HERDR_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+state_dir="${HERDR_PLUGIN_STATE_DIR:-${TMPDIR:-/tmp}/herdr-codex-cost-${UID:-user}}"
+codex_home="${CODEX_HOME:-${HOME}/.codex}"
+hooks_path="$codex_home/hooks.json"
+mkdir -p "$codex_home" "$state_dir"
+
+python3 - "$mode" "$hooks_path" "$plugin_root" "$state_dir" <<'PY'
+import json
+import os
+import shlex
+import sys
+from pathlib import Path
+
+mode, hooks_path_raw, plugin_root, state_dir = sys.argv[1:]
+hooks_path = Path(hooks_path_raw)
+marker = "HERDR_CODEX_COST_HOOK=1"
+events = ("PreToolUse", "Stop", "SubagentStop")
+
+try:
+    root = json.loads(hooks_path.read_text(encoding="utf-8")) if hooks_path.is_file() else {}
+except json.JSONDecodeError as error:
+    raise SystemExit(f"invalid {hooks_path}: {error}")
+if not isinstance(root, dict):
+    raise SystemExit(f"invalid {hooks_path}: root must be an object")
+
+hooks = root.get("hooks")
+if hooks is None:
+    hooks = {}
+    root["hooks"] = hooks
+if not isinstance(hooks, dict):
+    raise SystemExit(f"invalid {hooks_path}: hooks must be an object")
+
+
+def without_managed(entries):
+    if not isinstance(entries, list):
+        return []
+    kept_entries = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            kept_entries.append(entry)
+            continue
+        commands = entry.get("hooks")
+        if not isinstance(commands, list):
+            kept_entries.append(entry)
+            continue
+        kept_commands = [
+            hook
+            for hook in commands
+            if not (
+                isinstance(hook, dict)
+                and isinstance(hook.get("command"), str)
+                and marker in hook["command"]
+            )
+        ]
+        if kept_commands:
+            updated = dict(entry)
+            updated["hooks"] = kept_commands
+            kept_entries.append(updated)
+    return kept_entries
+
+
+for event in events:
+    existing = without_managed(hooks.get(event, []))
+    if mode == "install":
+        command = " ".join(
+            (
+                marker,
+                f"HERDR_PLUGIN_ROOT={shlex.quote(plugin_root)}",
+                f"HERDR_PLUGIN_STATE_DIR={shlex.quote(state_dir)}",
+                "bash",
+                shlex.quote(os.path.join(plugin_root, "bin", "codex-hook")),
+            )
+        )
+        managed = {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": command,
+                    "timeout": 10,
+                    "statusMessage": "Updating Codex cost",
+                }
+            ]
+        }
+        hooks[event] = [managed, *existing]
+    elif existing:
+        hooks[event] = existing
+    else:
+        hooks.pop(event, None)
+
+temporary = hooks_path.with_suffix(".json.tmp")
+temporary.write_text(json.dumps(root, indent=2) + "\n", encoding="utf-8")
+os.replace(temporary, hooks_path)
+print(f"{'installed hooks in' if mode == 'install' else 'removed hooks from'} {hooks_path}")
+PY

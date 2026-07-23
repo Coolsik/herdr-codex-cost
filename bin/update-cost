@@ -13,6 +13,9 @@ pane_ids() {
     --event)
       jq -r '.data.pane_id // empty' <<< "${HERDR_PLUGIN_EVENT_JSON:-{}}"
       ;;
+    --pane)
+      printf '%s\n' "${2:-}"
+      ;;
     *)
       jq -r '.focused_pane_id // .pane_id // empty' <<< "${HERDR_PLUGIN_CONTEXT_JSON:-{}}"
       ;;
