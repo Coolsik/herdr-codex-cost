@@ -51,7 +51,11 @@ worker() {
     pane_json="$(pane_info "$pane_id")"
     agent="$(jq -r '.result.pane.agent // empty' <<< "$pane_json")"
     status="$(jq -r '.result.pane.agent_status // empty' <<< "$pane_json")"
-    [ "$agent" = "codex" ] && [ "$status" = "working" ] || break
+    [ "$agent" = "codex" ] || break
+    if [ "$status" != "working" ]; then
+      "$plugin_root/bin/update-cost" --pane "$pane_id" >/dev/null 2>&1 || true
+      break
+    fi
     "$plugin_root/bin/update-cost" --poll "$pane_id" >/dev/null 2>&1 || true
     [ "${HERDR_CODEX_COST_POLL_ONCE:-0}" = "1" ] && break
     sleep "$interval"

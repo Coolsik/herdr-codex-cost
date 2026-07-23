@@ -41,8 +41,9 @@ codex = [
 ## 비용 갱신
 
 Herdr가 Codex pane을 `working`으로 표시하는 동안 5초마다 비용을 갱신합니다.
-pane이 `working` 상태를 벗어나면 polling을 중단하고 상태 변경 시 마지막으로
-한 번 갱신합니다.
+pane이 `working` 상태를 벗어나면 polling을 중단하고 상태 변경 handler와 polling
+worker가 마지막 갱신을 보장합니다. 세션이 빠르게 재시작되면 새 세션에 비용 정보가
+생길 때까지 마지막으로 계산한 비용을 유지합니다.
 
 각 pane은 rollout 경로, 파일 크기, 수정 시각으로 구성된 세션 트리 fingerprint를
 캐시합니다. polling 중 fingerprint가 그대로면 token event를 다시 파싱하거나

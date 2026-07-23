@@ -52,7 +52,9 @@ Restart Herdr or reload its configuration.
 
 When Herdr reports a Codex pane as `working`, the plugin refreshes it every five
 seconds. Polling stops as soon as the pane leaves `working`, and the status
-change triggers one final refresh.
+change and polling worker each ensure a final refresh. During a quick session
+restart, the last calculated cost remains visible until the new session has
+usage to replace it.
 
 Each pane caches its session-tree fingerprint from rollout paths, file sizes,
 and modification times. During polling, an unchanged fingerprint reuses the

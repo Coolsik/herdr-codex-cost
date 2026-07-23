@@ -45,7 +45,10 @@ POLL_CAPTURE="$fixture/updates" \
   HERDR_PLUGIN_STATE_DIR="$fixture/state" \
   HERDR_CODEX_COST_POLL_ONCE=1 \
   "$root/bin/poll-cost" --worker w1:p2
-[ ! -s "$fixture/updates" ]
+grep -Fx -- '--pane w1:p2' "$fixture/updates" >/dev/null || {
+  printf 'worker skipped the final refresh after a quick completion\n' >&2
+  exit 1
+}
 
 POLL_CAPTURE="$fixture/updates" \
   HERDR_BIN_PATH="$fixture/herdr" \

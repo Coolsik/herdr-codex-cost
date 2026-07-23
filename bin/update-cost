@@ -33,18 +33,20 @@ pane_ids() {
 }
 
 update_pane() {
-  local pane_id="$1" pane_json agent session_id pane_key cache_file cost
+  local pane_id="$1" pane_json agent session_id pane_key cache_file cost existing_cost
   local -a cost_args
   [ -n "$pane_id" ] || return 0
   pane_json="$("$herdr_bin" pane get "$pane_id" 2>/dev/null || true)"
   agent="$(jq -r '.result.pane.agent // empty' <<< "$pane_json")"
+  existing_cost="$(jq -r '.result.pane.tokens.cost // empty' <<< "$pane_json")"
   if [ "$agent" != "codex" ]; then
-    "$herdr_bin" pane report-metadata "$pane_id" --source herdr-codex-cost --clear-token cost >/dev/null 2>&1 || true
     return 0
   fi
   session_id="$(jq -r '.result.pane.agent_session | select(.agent == "codex") | select(.kind == "id") | .value // empty' <<< "$pane_json")"
   if [ -z "$session_id" ]; then
-    "$herdr_bin" pane report-metadata "$pane_id" --source herdr-codex-cost --token 'cost=…' >/dev/null
+    if [ -z "$existing_cost" ]; then
+      "$herdr_bin" pane report-metadata "$pane_id" --source herdr-codex-cost --token 'cost=…' >/dev/null
+    fi
     return 0
   fi
   mkdir -p "$state_dir"
@@ -57,6 +59,9 @@ update_pane() {
     return 0
   fi
   [ -n "$cost" ] || cost='…'
+  if [ "$cost" = '…' ] && [ -n "$existing_cost" ] && [ "$existing_cost" != '…' ]; then
+    return 0
+  fi
   "$herdr_bin" pane report-metadata "$pane_id" --source herdr-codex-cost --token "cost=$cost" >/dev/null
 }
 
