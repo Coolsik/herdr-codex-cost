@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+codex_home="${CODEX_HOME:-${HOME}/.codex}"
+session_id=""
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --session) session_id="${2:-}"; shift 2 ;;
+    --codex-home) codex_home="${2:-}"; shift 2 ;;
+    -h|--help)
+      printf 'Usage: codex-cost --session ID [--codex-home PATH]\n'
+      exit 0
+      ;;
+    *) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+[ -n "$session_id" ] || exit 0
+command -v python3 >/dev/null 2>&1 || exit 0
+
+python3 - "$codex_home" "$session_id" <<'PY'
+import glob
+import json
+import os
+import re
+import sqlite3
+import sys
+from collections import defaultdict, deque
+
+home, root_id = sys.argv[1:]
+valid_id = re.compile(r"^[A-Za-z0-9-]+$")
+if not valid_id.fullmatch(root_id):
+    raise SystemExit(0)
+
+# Standard API prices per million tokens: input, cached input, output.
+RATES = {
+    "gpt-5.6-sol": (5.0, 0.5, 30.0),
+    "gpt-5.6-terra": (2.5, 0.25, 15.0),
+    "gpt-5.6-luna": (1.0, 0.1, 6.0),
+    "gpt-5.5": (5.0, 0.5, 30.0),
+    "gpt-5.5-pro": (30.0, 30.0, 180.0),
+    "gpt-5.4": (2.5, 0.25, 15.0),
+    "gpt-5.4-mini": (0.75, 0.075, 4.5),
+    "gpt-5.4-nano": (0.2, 0.02, 1.25),
+    "gpt-5.4-pro": (30.0, 30.0, 180.0),
+    "chat-latest": (5.0, 0.5, 30.0),
+    "gpt-5.3-codex": (1.75, 0.175, 14.0),
+    "o3-deep-research": (5.0, 5.0, 20.0),
+    "o4-mini-deep-research": (1.0, 1.0, 4.0),
+    "computer-use-preview": (1.5, 1.5, 6.0),
+    "o4-mini-2025-04-16": (4.0, 1.0, 16.0),
+}
+ESTIMATED_RATES = {"codex-auto-review": (2.5, 0.25, 15.0)}
+
+
+def safe_path(raw):
+    if not raw:
+        return None
+    path = os.path.realpath(raw if os.path.isabs(raw) else os.path.join(home, raw))
+    roots = [os.path.realpath(os.path.join(home, name)) for name in ("sessions", "archived_sessions")]
+    return path if any(path == base or path.startswith(base + os.sep) for base in roots) else None
+
+
+def rollout_by_id(thread_id):
+    for base_name in ("sessions", "archived_sessions"):
+        base = os.path.join(home, base_name)
+        if not os.path.isdir(base):
+            continue
+        for directory, _, files in os.walk(base):
+            suffix = f"-{thread_id}.jsonl"
+            for filename in files:
+                if filename.startswith("rollout-") and filename.endswith(suffix):
+                    return safe_path(os.path.join(directory, filename))
+    return None
+
+
+files = {}
+edges = defaultdict(set)
+db_seen = False
+for database in sorted(glob.glob(os.path.join(home, "state_*.sqlite"))):
+    try:
+        connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+        thread_columns = {row[1] for row in connection.execute("pragma table_info(threads)")}
+        if {"id", "rollout_path"}.issubset(thread_columns):
+            db_seen = True
+            for thread_id, path in connection.execute("select id, rollout_path from threads"):
+                if isinstance(thread_id, str) and valid_id.fullmatch(thread_id):
+                    path = safe_path(path)
+                    if path and os.path.isfile(path):
+                        files[thread_id] = path
+        edge_columns = {row[1] for row in connection.execute("pragma table_info(thread_spawn_edges)")}
+        if {"parent_thread_id", "child_thread_id"}.issubset(edge_columns):
+            db_seen = True
+            for parent, child in connection.execute("select parent_thread_id, child_thread_id from thread_spawn_edges"):
+                if all(isinstance(value, str) and valid_id.fullmatch(value) for value in (parent, child)):
+                    edges[parent].add(child)
+        connection.close()
+    except (OSError, sqlite3.Error):
+        continue
+
+
+def metadata(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    return None
+                if event.get("type") == "session_meta":
+                    return event.get("payload") or {}
+    except OSError:
+        pass
+    return None
+
+
+# Older Codex state databases may not have spawn edges. Session metadata keeps
+# descendant aggregation working there without scanning every rollout on the
+# normal, indexed path.
+if db_seen:
+    metadata_candidates = list(files.values())
+else:
+    metadata_candidates = []
+    for base_name in ("sessions", "archived_sessions"):
+        base = os.path.join(home, base_name)
+        if not os.path.isdir(base):
+            continue
+        for directory, _, names in os.walk(base):
+            metadata_candidates.extend(
+                os.path.join(directory, name)
+                for name in names
+                if name.startswith("rollout-") and name.endswith(".jsonl")
+            )
+for path in metadata_candidates:
+    item = metadata(path)
+    if not item:
+        continue
+    child = item.get("id")
+    parent = item.get("parent_thread_id")
+    if all(isinstance(value, str) and valid_id.fullmatch(value) for value in (parent, child)):
+        safe = safe_path(path)
+        if safe:
+            files[child] = safe
+            edges[parent].add(child)
+
+root_path = files.get(root_id) or rollout_by_id(root_id)
+if not root_path:
+    raise SystemExit(0)
+files[root_id] = root_path
+
+queue = deque([root_id])
+visited = set()
+paths = []
+warning = False
+while queue and len(visited) < 512:
+    thread_id = queue.popleft()
+    if thread_id in visited:
+        warning = True
+        continue
+    visited.add(thread_id)
+    path = files.get(thread_id) or rollout_by_id(thread_id)
+    if path:
+        paths.append(path)
+    else:
+        warning = True
+    queue.extend(sorted(edges.get(thread_id, ())))
+if queue:
+    warning = True
+
+
+def parse_rollout(path):
+    model = ""
+    previous = None
+    totals = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0}
+    known_cost = estimated_cost = 0.0
+    complete = True
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                if line.endswith("\n"):
+                    complete = False
+                continue
+            payload = event.get("payload") or {}
+            if event.get("type") == "turn_context" and payload.get("model"):
+                model = "gpt-5.6-sol" if payload["model"] == "gpt-5.6" else payload["model"]
+                continue
+            if event.get("type") != "event_msg" or payload.get("type") != "token_count":
+                continue
+            usage = (payload.get("info") or {}).get("total_token_usage")
+            if not isinstance(usage, dict):
+                continue
+            current = {key: usage.get(key, 0) for key in totals}
+            if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in current.values()):
+                complete = False
+                continue
+            if current["cached_input_tokens"] > current["input_tokens"]:
+                complete = False
+                continue
+            if previous is not None and any(current[key] < previous[key] for key in totals):
+                complete = False
+                previous = current
+                totals = current
+                continue
+            delta = current if previous is None else {key: current[key] - previous[key] for key in totals}
+            previous = current
+            totals = current
+            rates = RATES.get(model)
+            estimated = False
+            if rates is None:
+                rates = ESTIMATED_RATES.get(model)
+                estimated = rates is not None
+            if rates is None:
+                if any(delta.values()):
+                    complete = False
+                continue
+            input_rate, cache_rate, output_rate = rates
+            cost = ((delta["input_tokens"] - delta["cached_input_tokens"]) * input_rate
+                    + delta["cached_input_tokens"] * cache_rate
+                    + delta["output_tokens"] * output_rate) / 1_000_000
+            if estimated:
+                estimated_cost += cost
+            else:
+                known_cost += cost
+    if previous is None:
+        complete = False
+    return totals, known_cost, estimated_cost, complete
+
+
+grand_totals = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0}
+known = estimated = 0.0
+has_usage = False
+for path in paths:
+    try:
+        totals, item_known, item_estimated, complete = parse_rollout(path)
+    except OSError:
+        warning = True
+        continue
+    if any(totals.values()):
+        has_usage = True
+    for key in grand_totals:
+        grand_totals[key] += totals[key]
+    known += item_known
+    estimated += item_estimated
+    warning = warning or not complete
+
+if not has_usage:
+    print("…")
+elif estimated:
+    print(f"{'!!' if warning else '~'}${known:.2f}(+${estimated:.2f})")
+else:
+    print(f"{'!!' if warning else '~'}${known:.2f}")
+PY

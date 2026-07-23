@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fixture="$(mktemp -d)"
+trap 'rm -rf "$fixture"' EXIT
+
+make_rollout() {
+  local id="$1" model="$2" input="$3" cached="$4" output="$5"
+  local path="$fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-$id.jsonl"
+  mkdir -p "$(dirname "$path")"
+  printf '%s\n' \
+    "{\"type\":\"turn_context\",\"payload\":{\"model\":\"$model\"}}" \
+    "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":$input,\"cached_input_tokens\":$cached,\"output_tokens\":$output}}}}" > "$path"
+}
+
+assert_cost() {
+  local id="$1" expected="$2" actual
+  actual="$("$root/bin/codex-cost" --codex-home "$fixture" --session "$id")"
+  [ "$actual" = "$expected" ] || { printf 'expected %s, got %s\n' "$expected" "$actual" >&2; exit 1; }
+}
+
+make_rollout root gpt-5.6-sol 1000000 200000 10000
+assert_cost root '~$4.40'
+
+make_rollout child gpt-5.6-luna 1000000 200000 10000
+python3 - "$fixture" <<'PY'
+import sqlite3
+import sys
+from pathlib import Path
+home = Path(sys.argv[1])
+db = sqlite3.connect(home / "state_test.sqlite")
+db.executescript("create table threads(id text, rollout_path text); create table thread_spawn_edges(parent_thread_id text, child_thread_id text);")
+for thread_id in ("root", "child"):
+    path = next((home / "sessions").rglob(f"*-{thread_id}.jsonl"))
+    db.execute("insert into threads values (?, ?)", (thread_id, str(path)))
+db.execute("insert into thread_spawn_edges values ('root', 'child')")
+db.commit()
+PY
+assert_cost root '~$5.28'
+
+metadata_fixture="$(mktemp -d)"
+make_rollout_at() {
+  local id="$1" parent="$2" model="$3" path
+  path="$metadata_fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-$id.jsonl"
+  mkdir -p "$(dirname "$path")"
+  printf '%s\n' \
+    "{\"type\":\"session_meta\",\"payload\":{\"id\":\"$id\"${parent:+,\"parent_thread_id\":\"$parent\",\"thread_source\":\"subagent\"}}}" \
+    "{\"type\":\"turn_context\",\"payload\":{\"model\":\"$model\"}}" \
+    '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000000,"cached_input_tokens":200000,"output_tokens":10000}}}}' > "$path"
+}
+make_rollout_at metadata-root '' gpt-5.6-sol
+make_rollout_at metadata-child metadata-root gpt-5.6-luna
+metadata_cost="$("$root/bin/codex-cost" --codex-home "$metadata_fixture" --session metadata-root)"
+rm -rf "$metadata_fixture"
+[ "$metadata_cost" = '~$5.28' ] || { printf 'metadata fallback expected ~$5.28, got %s\n' "$metadata_cost" >&2; exit 1; }
+
+make_rollout unknown unknown-model 1000 0 10
+assert_cost unknown '!!$0.00'
+printf 'codex cost tests passed\n'
