@@ -52,14 +52,13 @@ Restart Herdr or reload its configuration.
 The plugin refreshes cost at useful Codex execution boundaries:
 
 - Before a tool runs (`PreToolUse`)
-- When a main turn finishes (`Stop`)
 - When a descendant agent finishes (`SubagentStop`)
-- When Herdr observes an agent status change
+- When Herdr observes an agent status change, including the final
+  `working` → `done` transition
 
 Hook-triggered updates are limited to once every five seconds per pane. Repeated
-tool calls inside that window do not rescan the session logs. The final `Stop`
-event is subject to the same limit, while Herdr's status-change event provides
-an additional final refresh.
+tool calls inside that window do not rescan the session logs. Herdr's
+status-change event provides the final refresh after the main turn.
 
 You can refresh the currently focused pane manually at any time:
 

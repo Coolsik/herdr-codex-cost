@@ -11,6 +11,10 @@ printf '%s\n' '{
   "hooks": {
     "PreToolUse": [
       {"hooks": [{"type": "command", "command": "printf keep"}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "HERDR_CODEX_COST_HOOK=1 printf legacy"}]},
+      {"hooks": [{"type": "command", "command": "printf keep-stop"}]}
     ]
   }
 }' > "$fixture/codex/hooks.json"
@@ -27,9 +31,10 @@ run_manager install
 jq -e '
   .custom == true
   and ([.hooks.PreToolUse[].hooks[] | select(.command | contains("HERDR_CODEX_COST_HOOK=1"))] | length == 1)
-  and ([.hooks.Stop[].hooks[] | select(.command | contains("HERDR_CODEX_COST_HOOK=1"))] | length == 1)
+  and ([.hooks.Stop[].hooks[] | select(.command | contains("HERDR_CODEX_COST_HOOK=1"))] | length == 0)
   and ([.hooks.SubagentStop[].hooks[] | select(.command | contains("HERDR_CODEX_COST_HOOK=1"))] | length == 1)
   and ([.hooks.PreToolUse[].hooks[] | select(.command == "printf keep")] | length == 1)
+  and ([.hooks.Stop[].hooks[] | select(.command == "printf keep-stop")] | length == 1)
 ' "$fixture/codex/hooks.json" >/dev/null
 
 run_manager remove
@@ -37,7 +42,7 @@ jq -e '
   .custom == true
   and ([.. | strings | select(contains("HERDR_CODEX_COST_HOOK=1"))] | length == 0)
   and ([.hooks.PreToolUse[].hooks[] | select(.command == "printf keep")] | length == 1)
-  and (.hooks.Stop == null)
+  and ([.hooks.Stop[].hooks[] | select(.command == "printf keep-stop")] | length == 1)
   and (.hooks.SubagentStop == null)
 ' "$fixture/codex/hooks.json" >/dev/null
 

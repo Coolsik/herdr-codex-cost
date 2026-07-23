@@ -28,7 +28,8 @@ from pathlib import Path
 mode, hooks_path_raw, plugin_root, state_dir = sys.argv[1:]
 hooks_path = Path(hooks_path_raw)
 marker = "HERDR_CODEX_COST_HOOK=1"
-events = ("PreToolUse", "Stop", "SubagentStop")
+managed_events = ("PreToolUse", "SubagentStop")
+cleanup_events = (*managed_events, "Stop")
 
 try:
     root = json.loads(hooks_path.read_text(encoding="utf-8")) if hooks_path.is_file() else {}
@@ -73,9 +74,9 @@ def without_managed(entries):
     return kept_entries
 
 
-for event in events:
+for event in cleanup_events:
     existing = without_managed(hooks.get(event, []))
-    if mode == "install":
+    if mode == "install" and event in managed_events:
         command = " ".join(
             (
                 marker,
