@@ -32,6 +32,33 @@ pane_ids() {
   esac
 }
 
+pane_key() {
+  printf '%s' "$1" | cksum | awk '{print $1}'
+}
+
+diagnostic_file() {
+  printf '%s/error-%s.log\n' "$state_dir" "$(pane_key "$1")"
+}
+
+record_diagnostic() {
+  local pane_id="$1" code="$2" message="$3" file temporary content
+  mkdir -p "$state_dir"
+  file="$(diagnostic_file "$pane_id")"
+  content="$(printf 'pane_id=%s\ncode=%s\nmessage=%s\n' "$pane_id" "$code" "$message")"
+  if [ -r "$file" ] && [ "$(cat "$file")" = "$content" ]; then
+    return 0
+  fi
+  temporary="$file.$$.tmp"
+  printf '%s\n' "$content" > "$temporary"
+  mv "$temporary" "$file"
+}
+
+clear_diagnostic() {
+  local file
+  file="$(diagnostic_file "$1")"
+  [ ! -e "$file" ] || rm -f "$file"
+}
+
 update_pane() {
   local pane_id="$1" pane_json agent session_id pane_key cache_file cost existing_cost
   local -a cost_args
@@ -40,17 +67,21 @@ update_pane() {
   agent="$(jq -r '.result.pane.agent // empty' <<< "$pane_json")"
   existing_cost="$(jq -r '.result.pane.tokens.cost // empty' <<< "$pane_json")"
   if [ "$agent" != "codex" ]; then
+    clear_diagnostic "$pane_id"
     return 0
   fi
   session_id="$(jq -r '.result.pane.agent_session | select(.agent == "codex") | select(.kind == "id") | .value // empty' <<< "$pane_json")"
   if [ -z "$session_id" ]; then
-    if [ -z "$existing_cost" ]; then
-      "$herdr_bin" pane report-metadata "$pane_id" --source herdr-codex-cost --token 'cost=…' >/dev/null
+    record_diagnostic "$pane_id" "missing_agent_session" \
+      "Herdr did not associate this Codex pane with a thread ID; reinstall the Codex integration or restart the Codex pane."
+    if [ -z "$existing_cost" ] || [ "$existing_cost" = '…' ]; then
+      "$herdr_bin" pane report-metadata "$pane_id" --source herdr-codex-cost --token 'cost=session?' >/dev/null
     fi
     return 0
   fi
+  clear_diagnostic "$pane_id"
   mkdir -p "$state_dir"
-  pane_key="$(printf '%s' "$pane_id" | cksum | awk '{print $1}')"
+  pane_key="$(pane_key "$pane_id")"
   cache_file="$state_dir/cost-$pane_key.json"
   cost_args=("$plugin_root/bin/codex-cost" --session "$session_id" --cache-file "$cache_file")
   [ "$mode" = "--poll" ] && cost_args+=(--changed-only)

@@ -71,7 +71,18 @@ done
 
 : > "$fixture/herdr-calls"
 run_update --pane w1:p11
-grep -Fx -- 'pane report-metadata w1:p11 --source herdr-codex-cost --token cost=…' "$fixture/herdr-calls" >/dev/null
+grep -Fx -- 'pane report-metadata w1:p11 --source herdr-codex-cost --token cost=session?' "$fixture/herdr-calls" >/dev/null
+diagnostic="$(find "$fixture/state" -name 'error-*.log' -exec grep -lFx 'pane_id=w1:p11' {} + | head -1)"
+[ -n "$diagnostic" ]
+grep -Fx -- 'pane_id=w1:p11' "$diagnostic" >/dev/null
+grep -Fx -- 'code=missing_agent_session' "$diagnostic" >/dev/null
+
+: > "$fixture/herdr-calls"
+run_update --pane w1:p7
+if find "$fixture/state" -name 'error-*.log' -exec grep -Flx 'pane_id=w1:p7' {} + | grep -q .; then
+  printf 'successful update retained a stale diagnostic\n' >&2
+  exit 1
+fi
 
 : > "$fixture/herdr-calls"
 run_update --pane w1:p12

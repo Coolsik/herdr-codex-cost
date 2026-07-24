@@ -16,6 +16,24 @@ pane_info() {
   "$herdr_bin" pane get "$1" 2>/dev/null || true
 }
 
+run_update() {
+  local pane_id="$1" update_mode="$2" key error_file temporary output
+  key="$(pane_key "$pane_id")"
+  error_file="$state_dir/worker-error-$key.log"
+  mkdir -p "$state_dir"
+  if output="$("$plugin_root/bin/update-cost" "$update_mode" "$pane_id" 2>&1)"; then
+    [ ! -e "$error_file" ] || rm -f "$error_file"
+    return 0
+  fi
+  temporary="$error_file.$$.tmp"
+  {
+    printf 'pane_id=%s\ncode=update_failed\n' "$pane_id"
+    [ -z "$output" ] || printf 'output=%s\n' "$output"
+  } > "$temporary"
+  mv "$temporary" "$error_file"
+  return 1
+}
+
 worker() {
   local pane_id="$1" key owner pane_json agent status
   key="$(pane_key "$pane_id")"
@@ -53,10 +71,10 @@ worker() {
     status="$(jq -r '.result.pane.agent_status // empty' <<< "$pane_json")"
     [ "$agent" = "codex" ] || break
     if [ "$status" != "working" ]; then
-      "$plugin_root/bin/update-cost" --pane "$pane_id" >/dev/null 2>&1 || true
+      run_update "$pane_id" --pane || true
       break
     fi
-    "$plugin_root/bin/update-cost" --poll "$pane_id" >/dev/null 2>&1 || true
+    run_update "$pane_id" --poll || true
     [ "${HERDR_CODEX_COST_POLL_ONCE:-0}" = "1" ] && break
     sleep "$interval"
   done
@@ -90,7 +108,7 @@ case "$mode" in
     if [ "$agent" = "codex" ] && [ "$status" = "working" ]; then
       start_worker "$pane_id"
     else
-      "$plugin_root/bin/update-cost" --pane "$pane_id" >/dev/null 2>&1 || true
+      run_update "$pane_id" --pane || true
     fi
     ;;
   --startup)

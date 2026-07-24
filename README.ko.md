@@ -57,6 +57,11 @@ herdr plugin action invoke dev.herdr-codex-cost.refresh
 
 표시값의 `~`는 계산 완료, `!!`는 미등록 모델·손상된 로그·누락된 하위 세션 때문에 일부 비용을 제외했음을 뜻합니다. 비공개 단가인 `codex-auto-review` 추정분은 `~$1.23(+$0.45)`처럼 분리합니다.
 
+표시값이 `session?`이면 Herdr가 pane과 Codex thread ID를 연결하지 못한
+상태입니다. pane별 진단은 `${TMPDIR:-/tmp}/herdr-codex-cost-$UID/error-*.log`에
+기록되며, 연결이 복구되면 자동으로 삭제됩니다. 빠른 세션 재시작 중에는 이미
+계산된 비용이 있으면 `session?`로 덮어쓰지 않고 마지막 비용을 유지합니다.
+
 ## 테스트
 
 ```bash
