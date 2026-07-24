@@ -61,6 +61,9 @@ herdr plugin action invoke dev.herdr-codex-cost.refresh
 상태입니다. pane별 진단은 `${TMPDIR:-/tmp}/herdr-codex-cost-$UID/error-*.log`에
 기록되며, 연결이 복구되면 자동으로 삭제됩니다. 빠른 세션 재시작 중에는 이미
 계산된 비용이 있으면 `session?`로 덮어쓰지 않고 마지막 비용을 유지합니다.
+Herdr의 세션 연결 정보가 없으면 Codex pane 상태줄의 thread ID prefix를 읽고
+rollout의 전체 ID와 작업 디렉터리를 대조합니다. 정확히 하나만 일치할 때만
+fallback을 사용하며, 일치하지 않거나 후보가 여러 개면 `session?`를 유지합니다.
 
 ## 테스트
 

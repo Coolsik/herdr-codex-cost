@@ -76,6 +76,10 @@ herdr plugin action invoke dev.herdr-codex-cost.refresh
   `${TMPDIR:-/tmp}/herdr-codex-cost-$UID/error-*.log` and removed automatically
   after the association recovers. During a quick session restart, an existing
   calculated cost is retained instead of being replaced with `session?`.
+  When Herdr's association is unavailable, the plugin reads the thread ID
+  prefix from the Codex pane status line and checks it against rollout IDs and
+  working directories. The fallback is accepted only when exactly one rollout
+  matches; otherwise `session?` is retained.
 
 ## Testing
 

@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fixture="$(mktemp -d)"
+trap 'rm -rf "$fixture"' EXIT
+
+codex_home="$fixture/codex"
+mkdir -p "$codex_home/sessions/2026/07/24" "$codex_home/archived_sessions"
+
+write_rollout() {
+  local path="$1" id="$2" cwd="$3"
+  printf '{"type":"session_meta","payload":{"id":"%s","cwd":"%s"}}\n' "$id" "$cwd" > "$path"
+}
+
+write_rollout \
+  "$codex_home/sessions/2026/07/24/rollout-2026-07-24T13-22-00-019f925b-d970-7651-b562-df688dd54435.jsonl" \
+  "019f925b-d970-7651-b562-df688dd54435" \
+  "$fixture/project"
+
+cat > "$fixture/herdr" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+case "\$1 \$2" in
+  "pane get") printf '%s\n' '{"result":{"pane":{"cwd":"$fixture/project"}}}' ;;
+  "pane read")
+    case "\${PANE_TEXT_MODE:-unique}" in
+      unique) printf '%s\n' 'gpt-5.6-sol · 019f925b-d970-7651-b562-df688…' ;;
+      full) printf '%s\n' 'gpt-5.6-sol · 019f925b-d970-7651-b562-df688dd54435' ;;
+      absent) printf '%s\n' 'gpt-5.6-sol · no thread here' ;;
+    esac
+    ;;
+  *) exit 1 ;;
+esac
+SH
+chmod +x "$fixture/herdr"
+
+run_resolver() {
+  HERDR_BIN_PATH="$fixture/herdr" \
+    "$root/bin/resolve-pane-session" --pane w1:p1 --codex-home "$codex_home"
+}
+
+[ "$(run_resolver)" = "019f925b-d970-7651-b562-df688dd54435" ]
+[ "$(PANE_TEXT_MODE=full run_resolver)" = "019f925b-d970-7651-b562-df688dd54435" ]
+[ -z "$(PANE_TEXT_MODE=absent run_resolver)" ]
+
+write_rollout \
+  "$codex_home/archived_sessions/rollout-2026-07-24T13-23-00-019f925b-d970-7651-b562-df688aaaaaaaa.jsonl" \
+  "019f925b-d970-7651-b562-df688aaaaaaaa" \
+  "$fixture/project"
+[ -z "$(run_resolver)" ]
+
+printf 'resolve pane session tests passed\n'

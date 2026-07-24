@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+herdr_bin="${HERDR_BIN_PATH:-herdr}"
+codex_home="${CODEX_HOME:-${HOME}/.codex}"
+pane_id=""
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --pane) pane_id="${2:-}"; shift 2 ;;
+    --codex-home) codex_home="${2:-}"; shift 2 ;;
+    -h|--help)
+      printf 'Usage: resolve-pane-session --pane ID [--codex-home PATH]\n'
+      exit 0
+      ;;
+    *) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+[ -n "$pane_id" ] || exit 0
+command -v python3 >/dev/null 2>&1 || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+
+pane_json="$("$herdr_bin" pane get "$pane_id" 2>/dev/null || true)"
+pane_cwd="$(jq -r '.result.pane.cwd // empty' <<< "$pane_json")"
+[ -n "$pane_cwd" ] || exit 0
+pane_text="$("$herdr_bin" pane read "$pane_id" --source visible --lines 16 --format text 2>/dev/null || true)"
+[ -n "$pane_text" ] || exit 0
+
+python3 - "$codex_home" "$pane_cwd" "$pane_text" <<'PY'
+import json
+import os
+import re
+import sys
+
+home, pane_cwd, pane_text = sys.argv[1:]
+full = re.compile(r"(?<![0-9a-f])([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![0-9a-f])")
+truncated = re.compile(
+    r"(?<![0-9a-f])([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{5,11})(?:…|\.{3})"
+)
+matches = []
+for line in pane_text.splitlines():
+    matches.extend(match.group(1) for match in full.finditer(line))
+    matches.extend(match.group(1) for match in truncated.finditer(line))
+if not matches:
+    raise SystemExit(0)
+prefix = matches[-1]
+
+expected_cwd = os.path.realpath(pane_cwd)
+candidates = []
+for base_name in ("sessions", "archived_sessions"):
+    base = os.path.join(home, base_name)
+    if not os.path.isdir(base):
+        continue
+    for directory, _, files in os.walk(base):
+        for filename in files:
+            if not filename.startswith("rollout-") or not filename.endswith(".jsonl"):
+                continue
+            if f"-{prefix}" not in filename:
+                continue
+            path = os.path.join(directory, filename)
+            try:
+                with open(path, encoding="utf-8", errors="replace") as handle:
+                    metadata = None
+                    for line in handle:
+                        event = json.loads(line)
+                        if event.get("type") == "session_meta":
+                            metadata = event.get("payload") or {}
+                            break
+            except (OSError, json.JSONDecodeError):
+                continue
+            thread_id = metadata.get("id") if metadata else None
+            cwd = metadata.get("cwd") if metadata else None
+            if (
+                isinstance(thread_id, str)
+                and thread_id.startswith(prefix)
+                and isinstance(cwd, str)
+                and os.path.realpath(cwd) == expected_cwd
+            ):
+                candidates.append(thread_id)
+
+unique = sorted(set(candidates))
+if len(unique) == 1:
+    print(unique[0])
+PY

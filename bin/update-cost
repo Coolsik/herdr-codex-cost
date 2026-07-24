@@ -71,9 +71,12 @@ update_pane() {
     return 0
   fi
   session_id="$(jq -r '.result.pane.agent_session | select(.agent == "codex") | select(.kind == "id") | .value // empty' <<< "$pane_json")"
+  if [ -z "$session_id" ] && [ -x "$plugin_root/bin/resolve-pane-session" ]; then
+    session_id="$("$plugin_root/bin/resolve-pane-session" --pane "$pane_id" 2>/dev/null || true)"
+  fi
   if [ -z "$session_id" ]; then
     record_diagnostic "$pane_id" "missing_agent_session" \
-      "Herdr did not associate this Codex pane with a thread ID; reinstall the Codex integration or restart the Codex pane."
+      "Herdr did not associate this Codex pane with a thread ID and no unique status-line fallback matched."
     if [ -z "$existing_cost" ] || [ "$existing_cost" = '…' ]; then
       "$herdr_bin" pane report-metadata "$pane_id" --source herdr-codex-cost --token 'cost=session?' >/dev/null
     fi
