@@ -26,6 +26,7 @@ case "\$1 \$2" in
   "pane read")
     case "\${PANE_TEXT_MODE:-unique}" in
       unique) printf '%s\n' 'gpt-5.6-sol · 019f925b-d970-7651-b562-df688…' ;;
+      short) printf '%s\n' 'gpt-5.6-sol · 019f925b-d970-7651-b562-…' ;;
       full) printf '%s\n' 'gpt-5.6-sol · 019f925b-d970-7651-b562-df688dd54435' ;;
       absent) printf '%s\n' 'gpt-5.6-sol · no thread here' ;;
     esac
@@ -41,6 +42,7 @@ run_resolver() {
 }
 
 [ "$(run_resolver)" = "019f925b-d970-7651-b562-df688dd54435" ]
+[ "$(PANE_TEXT_MODE=short run_resolver)" = "019f925b-d970-7651-b562-df688dd54435" ]
 [ "$(PANE_TEXT_MODE=full run_resolver)" = "019f925b-d970-7651-b562-df688dd54435" ]
 [ -z "$(PANE_TEXT_MODE=absent run_resolver)" ]
 
