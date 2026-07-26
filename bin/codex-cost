@@ -35,7 +35,7 @@ from collections import defaultdict, deque
 
 home, root_id, cache_path, changed_only_raw = sys.argv[1:]
 changed_only = changed_only_raw == "1"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 valid_id = re.compile(r"^[A-Za-z0-9-]+$")
 if not valid_id.fullmatch(root_id):
     raise SystemExit(0)
@@ -313,9 +313,9 @@ for path in paths:
 if not has_usage:
     result = "…"
 elif estimated:
-    result = f"{'!!' if warning else '~'}${known:.2f}(+${estimated:.2f})"
+    result = f"{'!!' if warning else ''}${known:.2f}(+${estimated:.2f})"
 else:
-    result = f"{'!!' if warning else '~'}${known:.2f}"
+    result = f"{'!!' if warning else ''}${known:.2f}"
 
 if cache_path:
     directory = os.path.dirname(cache_path)

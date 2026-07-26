@@ -14,11 +14,11 @@ printf '%s\n' "$*" >> "$HERDR_CAPTURE"
 case "$1 $2" in
   "pane get")
     case "$3" in
-      w1:p9) printf '%s\n' '{"result":{"pane":{"pane_id":"w1:p9","agent_status":"unknown","tokens":{"cost":"~$9.99"}}}}' ;;
-      w1:p10) printf '%s\n' '{"result":{"pane":{"pane_id":"w1:p10","agent":"codex","tokens":{"cost":"~$9.99"}}}}' ;;
+      w1:p9) printf '%s\n' '{"result":{"pane":{"pane_id":"w1:p9","agent_status":"unknown","tokens":{"cost":"$9.99"}}}}' ;;
+      w1:p10) printf '%s\n' '{"result":{"pane":{"pane_id":"w1:p10","agent":"codex","tokens":{"cost":"$9.99"}}}}' ;;
       w1:p11) printf '%s\n' '{"result":{"pane":{"pane_id":"w1:p11","agent":"codex"}}}' ;;
       w1:p13) printf '%s\n' '{"result":{"pane":{"pane_id":"w1:p13","agent":"codex"}}}' ;;
-      w1:p12) printf '%s\n' '{"result":{"pane":{"pane_id":"w1:p12","agent":"codex","agent_session":{"agent":"codex","kind":"id","value":"session-empty"},"tokens":{"cost":"~$9.99"}}}}' ;;
+      w1:p12) printf '%s\n' '{"result":{"pane":{"pane_id":"w1:p12","agent":"codex","agent_session":{"agent":"codex","kind":"id","value":"session-empty"},"tokens":{"cost":"$9.99"}}}}' ;;
       *) printf '{"result":{"pane":{"pane_id":"%s","agent":"codex","agent_session":{"agent":"codex","kind":"id","value":"session-1"}}}}\n' "$3" ;;
     esac
     ;;
@@ -34,7 +34,7 @@ set -euo pipefail
 printf '%s\n' "$*" >> "$COST_CAPTURE"
 case " $* " in
   *" --session session-empty "*) printf '%s\n' '…' ;;
-  *) printf '%s\n' '~$1.23' ;;
+  *) printf '%s\n' '$1.23' ;;
 esac
 SH
 chmod +x "$fixture/plugin/bin/codex-cost"
@@ -59,14 +59,14 @@ run_update() {
 
 run_update --pane w1:p7
 grep -Fx -- 'pane get w1:p7' "$fixture/herdr-calls" >/dev/null
-grep -Fx -- 'pane report-metadata w1:p7 --source herdr-codex-cost --token cost=~$1.23' "$fixture/herdr-calls" >/dev/null
+grep -Fx -- 'pane report-metadata w1:p7 --source herdr-codex-cost --token cost=$1.23' "$fixture/herdr-calls" >/dev/null
 grep -E -- '^--session session-1 --cache-file .*/cost-[0-9]+\.json$' "$fixture/cost-calls" >/dev/null
 
 : > "$fixture/herdr-calls"
 : > "$fixture/cost-calls"
 run_update --poll w1:p8
 grep -Fx -- 'pane get w1:p8' "$fixture/herdr-calls" >/dev/null
-grep -Fx -- 'pane report-metadata w1:p8 --source herdr-codex-cost --token cost=~$1.23' "$fixture/herdr-calls" >/dev/null
+grep -Fx -- 'pane report-metadata w1:p8 --source herdr-codex-cost --token cost=$1.23' "$fixture/herdr-calls" >/dev/null
 grep -E -- '^--session session-1 --cache-file .*/cost-[0-9]+\.json --changed-only$' "$fixture/cost-calls" >/dev/null
 
 for pane_id in w1:p9 w1:p10; do
@@ -97,7 +97,7 @@ fi
 : > "$fixture/herdr-calls"
 : > "$fixture/cost-calls"
 run_update --pane w1:p13
-grep -Fx -- 'pane report-metadata w1:p13 --source herdr-codex-cost --token cost=~$1.23' "$fixture/herdr-calls" >/dev/null
+grep -Fx -- 'pane report-metadata w1:p13 --source herdr-codex-cost --token cost=$1.23' "$fixture/herdr-calls" >/dev/null
 grep -E -- '^--session session-fallback --cache-file .*/cost-[0-9]+\.json$' "$fixture/cost-calls" >/dev/null
 
 : > "$fixture/herdr-calls"

@@ -55,7 +55,7 @@ sidebar metadata를 갱신하지 않고 기존 비용을 재사용합니다.
 herdr plugin action invoke dev.herdr-codex-cost.refresh
 ```
 
-표시값의 `~`는 계산 완료, `!!`는 미등록 모델·손상된 로그·누락된 하위 세션 때문에 일부 비용을 제외했음을 뜻합니다. 비공개 단가인 `codex-auto-review` 추정분은 `~$1.23(+$0.45)`처럼 분리합니다.
+`$1.23`은 정상적으로 계산된 값이고, `!!$1.23`은 미등록 모델·손상된 로그·누락된 하위 세션 때문에 일부 비용을 제외했음을 뜻합니다. 비공개 단가인 `codex-auto-review` 추정분은 `$1.23(+$0.45)`처럼 분리합니다.
 
 표시값이 `session?`이면 Herdr가 pane과 Codex thread ID를 연결하지 못한
 상태입니다. pane별 진단은 `${TMPDIR:-/tmp}/herdr-codex-cost-$UID/error-*.log`에

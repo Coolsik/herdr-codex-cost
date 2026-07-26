@@ -68,9 +68,9 @@ herdr plugin action invoke dev.herdr-codex-cost.refresh
 
 ## Display values
 
-- `~$1.23` means the available usage was calculated successfully.
+- `$1.23` means the available usage was calculated successfully.
 - `!!$1.23` means some usage was excluded because of an unknown model, damaged log, or missing descendant session.
-- `~$1.23(+$0.45)` separates the unofficial estimate for `codex-auto-review` from costs based on published prices.
+- `$1.23(+$0.45)` separates the unofficial estimate for `codex-auto-review` from costs based on published prices.
 - `session?` means Herdr could not associate the pane with a Codex thread ID.
   Per-pane diagnostics are written to
   `${TMPDIR:-/tmp}/herdr-codex-cost-$UID/error-*.log` and removed automatically
