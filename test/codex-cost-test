@@ -20,6 +20,12 @@ assert_cost() {
   [ "$actual" = "$expected" ] || { printf 'expected %s, got %s\n' "$expected" "$actual" >&2; exit 1; }
 }
 
+assert_home_cost() {
+  local home="$1" id="$2" expected="$3" actual
+  actual="$("$root/bin/codex-cost" --codex-home "$home" --session "$id")"
+  [ "$actual" = "$expected" ] || { printf 'expected %s, got %s\n' "$expected" "$actual" >&2; exit 1; }
+}
+
 make_rollout root gpt-5.6-sol 1000000 200000 10000
 assert_cost root '~$4.40'
 
@@ -48,6 +54,22 @@ root_path="$(find "$fixture/sessions" -name '*-root.jsonl' -print -quit)"
 printf '%s\n' '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":2000000,"cached_input_tokens":400000,"output_tokens":20000}}}}' >> "$root_path"
 changed_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
 [ "$changed_cached" = '~$9.68' ] || { printf 'changed cached cost mismatch: %s\n' "$changed_cached" >&2; exit 1; }
+python3 - "$cache_file" <<'PY'
+import json
+import sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    cached = json.load(handle)
+cached["version"] = 1
+cached["cost"] = "!!$0.00"
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(cached, handle)
+    handle.write("\n")
+PY
+stale_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
+[ "$stale_cached" = '~$9.68' ] || { printf 'version 1 cache was not invalidated: %s\n' "$stale_cached" >&2; exit 1; }
+unchanged_v2="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
+[ -z "$unchanged_v2" ] || { printf 'version 2 cache should be silent: %s\n' "$unchanged_v2" >&2; exit 1; }
 
 metadata_fixture="$(mktemp -d)"
 make_rollout_at() {
@@ -64,6 +86,88 @@ make_rollout_at metadata-child metadata-root gpt-5.6-luna
 metadata_cost="$("$root/bin/codex-cost" --codex-home "$metadata_fixture" --session metadata-root)"
 rm -rf "$metadata_fixture"
 [ "$metadata_cost" = '~$5.28' ] || { printf 'metadata fallback expected ~$5.28, got %s\n' "$metadata_cost" >&2; exit 1; }
+
+# Positive/all fork rollouts replay inherited parent token snapshots before the
+# first model context. Those snapshots establish a baseline but add no child cost.
+fork_fixture="$(mktemp -d)"
+mkdir -p "$fork_fixture/sessions/2026/07/23"
+printf '%s\n' \
+  '{"type":"session_meta","payload":{"id":"fork-root","thread_source":"user"}}' \
+  '{"type":"turn_context","payload":{"model":"gpt-5.6-sol"}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000000,"cached_input_tokens":200000,"output_tokens":10000}}}}' \
+  > "$fork_fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-fork-root.jsonl"
+printf '%s\n' \
+  '{"type":"session_meta","payload":{"id":"fork-child","parent_thread_id":"fork-root","forked_from_id":"fork-root","thread_source":"subagent"}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":500000,"cached_input_tokens":100000,"output_tokens":5000}}}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000000,"cached_input_tokens":200000,"output_tokens":10000}}}}' \
+  '{"type":"turn_context","payload":{"model":"gpt-5.6-luna"}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000000,"cached_input_tokens":200000,"output_tokens":10000}}}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":2000000,"cached_input_tokens":400000,"output_tokens":20000}}}}' \
+  > "$fork_fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-fork-child.jsonl"
+python3 - "$fork_fixture" <<'PY'
+import sqlite3
+import sys
+from pathlib import Path
+home = Path(sys.argv[1])
+db = sqlite3.connect(home / "state_test.sqlite")
+db.executescript("create table threads(id text, rollout_path text); create table thread_spawn_edges(parent_thread_id text, child_thread_id text);")
+for thread_id in ("fork-root", "fork-child"):
+    path = next((home / "sessions").rglob(f"*-{thread_id}.jsonl"))
+    db.execute("insert into threads values (?, ?)", (thread_id, str(path)))
+db.execute("insert into thread_spawn_edges values ('fork-root', 'fork-child')")
+db.commit()
+PY
+assert_home_cost "$fork_fixture" fork-root '~$5.28'
+rm -rf "$fork_fixture"
+
+# A pre-model token count without positive-fork metadata remains incomplete.
+nonfork_fixture="$(mktemp -d)"
+mkdir -p "$nonfork_fixture/sessions/2026/07/23"
+printf '%s\n' \
+  '{"type":"session_meta","payload":{"id":"nonfork","thread_source":"user"}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000000,"cached_input_tokens":200000,"output_tokens":10000}}}}' \
+  '{"type":"turn_context","payload":{"model":"gpt-5.6-sol"}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":2000000,"cached_input_tokens":400000,"output_tokens":20000}}}}' \
+  > "$nonfork_fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-nonfork.jsonl"
+assert_home_cost "$nonfork_fixture" nonfork '!!$4.40'
+rm -rf "$nonfork_fixture"
+
+# Fork metadata cannot make an unknown model, a missing model, or damaged JSON complete.
+invalid_fixture="$(mktemp -d)"
+mkdir -p "$invalid_fixture/sessions/2026/07/23"
+printf '%s\n' \
+  '{"type":"session_meta","payload":{"id":"unknown-fork","parent_thread_id":"parent","forked_from_id":"parent","thread_source":"subagent"}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000000,"cached_input_tokens":200000,"output_tokens":10000}}}}' \
+  '{"type":"turn_context","payload":{"model":"unknown-model"}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":2000000,"cached_input_tokens":400000,"output_tokens":20000}}}}' \
+  > "$invalid_fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-unknown-fork.jsonl"
+printf '%s\n' \
+  '{"type":"session_meta","payload":{"id":"missing-model","parent_thread_id":"parent","forked_from_id":"parent","thread_source":"subagent"}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000000,"cached_input_tokens":200000,"output_tokens":10000}}}}' \
+  > "$invalid_fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-missing-model.jsonl"
+printf '%s\n' \
+  '{"type":"session_meta","payload":{"id":"reversed-fork","parent_thread_id":"parent","forked_from_id":"parent","thread_source":"subagent"}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000000,"cached_input_tokens":200000,"output_tokens":10000}}}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":900000,"cached_input_tokens":180000,"output_tokens":9000}}}}' \
+  '{"type":"turn_context","payload":{"model":"gpt-5.6-sol"}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1900000,"cached_input_tokens":380000,"output_tokens":19000}}}}' \
+  > "$invalid_fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-reversed-fork.jsonl"
+printf '%s\n' \
+  '{"type":"turn_context","payload":{"model":"gpt-5.6-sol"}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000000,"cached_input_tokens":200000,"output_tokens":10000}}}}' \
+  '{"damaged":' \
+  > "$invalid_fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-damaged.jsonl"
+printf '%s\n' \
+  '{"type":"turn_context","payload":{"model":"gpt-5.6-sol"}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000000,"cached_input_tokens":200000,"output_tokens":10000}}}}' \
+  > "$invalid_fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-active-tail.jsonl"
+printf '%s' '{"being-written":' >> "$invalid_fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-active-tail.jsonl"
+assert_home_cost "$invalid_fixture" unknown-fork '!!$0.00'
+assert_home_cost "$invalid_fixture" missing-model '!!$0.00'
+assert_home_cost "$invalid_fixture" reversed-fork '!!$4.40'
+assert_home_cost "$invalid_fixture" damaged '!!$4.40'
+assert_home_cost "$invalid_fixture" active-tail '~$4.40'
+rm -rf "$invalid_fixture"
 
 make_rollout unknown unknown-model 1000 0 10
 assert_cost unknown '!!$0.00'
