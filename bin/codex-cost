@@ -35,16 +35,20 @@ from collections import defaultdict, deque
 
 home, root_id, cache_path, changed_only_raw = sys.argv[1:]
 changed_only = changed_only_raw == "1"
-CACHE_VERSION = 3
+CACHE_VERSION = 5
 valid_id = re.compile(r"^[A-Za-z0-9-]+$")
 if not valid_id.fullmatch(root_id):
     raise SystemExit(0)
 
 # Standard API prices per million tokens: input, cached input, output.
+# GPT-5.6 prompts over 272K input tokens use 2x input and 1.5x output rates.
+LONG_CONTEXT_INPUT_TOKENS = 272_000
+LONG_CONTEXT_INPUT_MULTIPLIER = 2.0
+LONG_CONTEXT_OUTPUT_MULTIPLIER = 1.5
 RATES = {
     "gpt-5.6-sol": (5.0, 0.5, 30.0),
-    "gpt-5.6-terra": (2.5, 0.25, 15.0),
-    "gpt-5.6-luna": (1.0, 0.1, 6.0),
+    "gpt-5.6-terra": (2.0, 0.2, 12.0),
+    "gpt-5.6-luna": (0.2, 0.02, 1.2),
     "gpt-5.5": (5.0, 0.5, 30.0),
     "gpt-5.5-pro": (30.0, 30.0, 180.0),
     "gpt-5.4": (2.5, 0.25, 15.0),
@@ -268,6 +272,17 @@ def parse_rollout(path):
             delta = current if previous is None else {key: current[key] - previous[key] for key in totals}
             previous = current
             totals = current
+            last_usage = (payload.get("info") or {}).get("last_token_usage")
+            request_usage = None
+            if isinstance(last_usage, dict):
+                candidate = {key: last_usage.get(key, 0) for key in totals}
+                if (
+                    all(isinstance(value, int) and not isinstance(value, bool) and value >= 0
+                        for value in candidate.values())
+                    and candidate["cached_input_tokens"] <= candidate["input_tokens"]
+                ):
+                    request_usage = candidate
+            billable = request_usage or delta
             rates = RATES.get(model)
             estimated = False
             if rates is None:
@@ -281,9 +296,13 @@ def parse_rollout(path):
                         complete = False
                 continue
             input_rate, cache_rate, output_rate = rates
-            cost = ((delta["input_tokens"] - delta["cached_input_tokens"]) * input_rate
-                    + delta["cached_input_tokens"] * cache_rate
-                    + delta["output_tokens"] * output_rate) / 1_000_000
+            if request_usage and request_usage["input_tokens"] > LONG_CONTEXT_INPUT_TOKENS:
+                input_rate *= LONG_CONTEXT_INPUT_MULTIPLIER
+                cache_rate *= LONG_CONTEXT_INPUT_MULTIPLIER
+                output_rate *= LONG_CONTEXT_OUTPUT_MULTIPLIER
+            cost = ((billable["input_tokens"] - billable["cached_input_tokens"]) * input_rate
+                    + billable["cached_input_tokens"] * cache_rate
+                    + billable["output_tokens"] * output_rate) / 1_000_000
             if estimated:
                 estimated_cost += cost
             else:

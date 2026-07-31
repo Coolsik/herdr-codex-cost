@@ -14,6 +14,15 @@ make_rollout() {
     "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":$input,\"cached_input_tokens\":$cached,\"output_tokens\":$output}}}}" > "$path"
 }
 
+make_long_context_rollout() {
+  local id="$1" model="$2" input="$3" cached="$4" output="$5"
+  local path="$fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-$id.jsonl"
+  mkdir -p "$(dirname "$path")"
+  printf '%s\n' \
+    "{\"type\":\"turn_context\",\"payload\":{\"model\":\"$model\"}}" \
+    "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":$input,\"cached_input_tokens\":$cached,\"output_tokens\":$output,\"total_tokens\":$((input + output))},\"last_token_usage\":{\"input_tokens\":$input,\"cached_input_tokens\":$cached,\"output_tokens\":$output,\"total_tokens\":$((input + output))}}}}" > "$path"
+}
+
 assert_cost() {
   local id="$1" expected="$2" actual
   actual="$("$root/bin/codex-cost" --codex-home "$fixture" --session "$id")"
@@ -28,6 +37,9 @@ assert_home_cost() {
 
 make_rollout root gpt-5.6-sol 1000000 200000 10000
 assert_cost root '$4.40'
+
+make_long_context_rollout long-context gpt-5.6-sol 300000 100000 10000
+assert_cost long-context '$2.55'
 
 make_rollout review codex-auto-review 1000000 200000 10000
 assert_cost review '$0.00(+$2.20)'
@@ -46,17 +58,20 @@ for thread_id in ("root", "child"):
 db.execute("insert into thread_spawn_edges values ('root', 'child')")
 db.commit()
 PY
-assert_cost root '$5.28'
+assert_cost root '$4.58'
+
+make_rollout terra gpt-5.6-terra 1000000 200000 10000
+assert_cost terra '$1.76'
 
 cache_file="$fixture/cost-cache.json"
 first_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
 second_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ "$first_cached" = '$5.28' ] || { printf 'initial cached cost mismatch: %s\n' "$first_cached" >&2; exit 1; }
+[ "$first_cached" = '$4.58' ] || { printf 'initial cached cost mismatch: %s\n' "$first_cached" >&2; exit 1; }
 [ -z "$second_cached" ] || { printf 'unchanged cache should be silent: %s\n' "$second_cached" >&2; exit 1; }
 root_path="$(find "$fixture/sessions" -name '*-root.jsonl' -print -quit)"
 printf '%s\n' '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":2000000,"cached_input_tokens":400000,"output_tokens":20000}}}}' >> "$root_path"
 changed_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ "$changed_cached" = '$9.68' ] || { printf 'changed cached cost mismatch: %s\n' "$changed_cached" >&2; exit 1; }
+[ "$changed_cached" = '$8.98' ] || { printf 'changed cached cost mismatch: %s\n' "$changed_cached" >&2; exit 1; }
 python3 - "$cache_file" <<'PY'
 import json
 import sys
@@ -70,7 +85,7 @@ with open(path, "w", encoding="utf-8") as handle:
     handle.write("\n")
 PY
 stale_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ "$stale_cached" = '$9.68' ] || { printf 'version 2 cache was not invalidated: %s\n' "$stale_cached" >&2; exit 1; }
+[ "$stale_cached" = '$8.98' ] || { printf 'version 2 cache was not invalidated: %s\n' "$stale_cached" >&2; exit 1; }
 unchanged_v3="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
 [ -z "$unchanged_v3" ] || { printf 'version 3 cache should be silent: %s\n' "$unchanged_v3" >&2; exit 1; }
 
@@ -88,7 +103,7 @@ make_rollout_at metadata-root '' gpt-5.6-sol
 make_rollout_at metadata-child metadata-root gpt-5.6-luna
 metadata_cost="$("$root/bin/codex-cost" --codex-home "$metadata_fixture" --session metadata-root)"
 rm -rf "$metadata_fixture"
-[ "$metadata_cost" = '$5.28' ] || { printf 'metadata fallback expected $5.28, got %s\n' "$metadata_cost" >&2; exit 1; }
+[ "$metadata_cost" = '$4.58' ] || { printf 'metadata fallback expected $4.58, got %s\n' "$metadata_cost" >&2; exit 1; }
 
 # Positive/all fork rollouts replay inherited parent token snapshots before the
 # first model context. Those snapshots establish a baseline but add no child cost.
@@ -120,7 +135,7 @@ for thread_id in ("fork-root", "fork-child"):
 db.execute("insert into thread_spawn_edges values ('fork-root', 'fork-child')")
 db.commit()
 PY
-assert_home_cost "$fork_fixture" fork-root '$5.28'
+assert_home_cost "$fork_fixture" fork-root '$4.58'
 rm -rf "$fork_fixture"
 
 # A pre-model token count without positive-fork metadata remains incomplete.
