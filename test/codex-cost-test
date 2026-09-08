@@ -35,11 +35,26 @@ assert_home_cost() {
   [ "$actual" = "$expected" ] || { printf 'expected %s, got %s\n' "$expected" "$actual" >&2; exit 1; }
 }
 
+make_rollout astra gpt-6-astra 1000000 200000 10000
+assert_cost astra '$8.70'
+
+make_long_context_rollout astra-long gpt-6-astra 300000 100000 10000
+assert_cost astra-long '$4.95'
+
+make_long_context_rollout astra-boundary gpt-6-astra 272000 100000 10000
+assert_cost astra-boundary '$2.32'
+
+make_long_context_rollout astra-above-boundary gpt-6-astra 272001 100000 10000
+assert_cost astra-above-boundary '$4.39'
+
 make_rollout root gpt-5.6-sol 1000000 200000 10000
-assert_cost root '$4.40'
+assert_cost root '$3.48'
+
+make_rollout sol-alias gpt-5.6 1000000 200000 10000
+assert_cost sol-alias '$3.48'
 
 make_long_context_rollout long-context gpt-5.6-sol 300000 100000 10000
-assert_cost long-context '$2.55'
+assert_cost long-context '$1.98'
 
 make_rollout review codex-auto-review 1000000 200000 10000
 assert_cost review '$0.00(+$2.20)'
@@ -58,7 +73,7 @@ for thread_id in ("root", "child"):
 db.execute("insert into thread_spawn_edges values ('root', 'child')")
 db.commit()
 PY
-assert_cost root '$4.58'
+assert_cost root '$3.66'
 
 make_rollout terra gpt-5.6-terra 1000000 200000 10000
 assert_cost terra '$1.76'
@@ -66,28 +81,28 @@ assert_cost terra '$1.76'
 cache_file="$fixture/cost-cache.json"
 first_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
 second_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ "$first_cached" = '$4.58' ] || { printf 'initial cached cost mismatch: %s\n' "$first_cached" >&2; exit 1; }
+[ "$first_cached" = '$3.66' ] || { printf 'initial cached cost mismatch: %s\n' "$first_cached" >&2; exit 1; }
 [ -z "$second_cached" ] || { printf 'unchanged cache should be silent: %s\n' "$second_cached" >&2; exit 1; }
 root_path="$(find "$fixture/sessions" -name '*-root.jsonl' -print -quit)"
 printf '%s\n' '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":2000000,"cached_input_tokens":400000,"output_tokens":20000}}}}' >> "$root_path"
 changed_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ "$changed_cached" = '$8.98' ] || { printf 'changed cached cost mismatch: %s\n' "$changed_cached" >&2; exit 1; }
+[ "$changed_cached" = '$7.14' ] || { printf 'changed cached cost mismatch: %s\n' "$changed_cached" >&2; exit 1; }
 python3 - "$cache_file" <<'PY'
 import json
 import sys
 path = sys.argv[1]
 with open(path, encoding="utf-8") as handle:
     cached = json.load(handle)
-cached["version"] = 2
+cached["version"] = 5
 cached["cost"] = "!!$0.00"
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(cached, handle)
     handle.write("\n")
 PY
 stale_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ "$stale_cached" = '$8.98' ] || { printf 'version 2 cache was not invalidated: %s\n' "$stale_cached" >&2; exit 1; }
-unchanged_v3="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ -z "$unchanged_v3" ] || { printf 'version 3 cache should be silent: %s\n' "$unchanged_v3" >&2; exit 1; }
+[ "$stale_cached" = '$7.14' ] || { printf 'version 5 cache was not invalidated: %s\n' "$stale_cached" >&2; exit 1; }
+unchanged_v6="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
+[ -z "$unchanged_v6" ] || { printf 'version 6 cache should be silent: %s\n' "$unchanged_v6" >&2; exit 1; }
 
 metadata_fixture="$(mktemp -d)"
 make_rollout_at() {
@@ -103,7 +118,7 @@ make_rollout_at metadata-root '' gpt-5.6-sol
 make_rollout_at metadata-child metadata-root gpt-5.6-luna
 metadata_cost="$("$root/bin/codex-cost" --codex-home "$metadata_fixture" --session metadata-root)"
 rm -rf "$metadata_fixture"
-[ "$metadata_cost" = '$4.58' ] || { printf 'metadata fallback expected $4.58, got %s\n' "$metadata_cost" >&2; exit 1; }
+[ "$metadata_cost" = '$3.66' ] || { printf 'metadata fallback expected $3.66, got %s\n' "$metadata_cost" >&2; exit 1; }
 
 # Positive/all fork rollouts replay inherited parent token snapshots before the
 # first model context. Those snapshots establish a baseline but add no child cost.
@@ -135,7 +150,7 @@ for thread_id in ("fork-root", "fork-child"):
 db.execute("insert into thread_spawn_edges values ('fork-root', 'fork-child')")
 db.commit()
 PY
-assert_home_cost "$fork_fixture" fork-root '$4.58'
+assert_home_cost "$fork_fixture" fork-root '$3.66'
 rm -rf "$fork_fixture"
 
 # A pre-model token count without positive-fork metadata remains incomplete.
@@ -147,7 +162,7 @@ printf '%s\n' \
   '{"type":"turn_context","payload":{"model":"gpt-5.6-sol"}}' \
   '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":2000000,"cached_input_tokens":400000,"output_tokens":20000}}}}' \
   > "$nonfork_fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-nonfork.jsonl"
-assert_home_cost "$nonfork_fixture" nonfork '!!$4.40'
+assert_home_cost "$nonfork_fixture" nonfork '!!$3.48'
 rm -rf "$nonfork_fixture"
 
 # Fork metadata cannot make an unknown model, a missing model, or damaged JSON complete.
@@ -182,9 +197,9 @@ printf '%s\n' \
 printf '%s' '{"being-written":' >> "$invalid_fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-active-tail.jsonl"
 assert_home_cost "$invalid_fixture" unknown-fork '!!$0.00'
 assert_home_cost "$invalid_fixture" missing-model '!!$0.00'
-assert_home_cost "$invalid_fixture" reversed-fork '!!$4.40'
-assert_home_cost "$invalid_fixture" damaged '!!$4.40'
-assert_home_cost "$invalid_fixture" active-tail '$4.40'
+assert_home_cost "$invalid_fixture" reversed-fork '!!$3.48'
+assert_home_cost "$invalid_fixture" damaged '!!$3.48'
+assert_home_cost "$invalid_fixture" active-tail '$3.48'
 rm -rf "$invalid_fixture"
 
 make_rollout unknown unknown-model 1000 0 10
