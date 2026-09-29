@@ -16,11 +16,12 @@ make_rollout() {
 
 make_long_context_rollout() {
   local id="$1" model="$2" input="$3" cached="$4" output="$5"
+  local writes="${6:-0}"
   local path="$fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-$id.jsonl"
   mkdir -p "$(dirname "$path")"
   printf '%s\n' \
     "{\"type\":\"turn_context\",\"payload\":{\"model\":\"$model\"}}" \
-    "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":$input,\"cached_input_tokens\":$cached,\"output_tokens\":$output,\"total_tokens\":$((input + output))},\"last_token_usage\":{\"input_tokens\":$input,\"cached_input_tokens\":$cached,\"output_tokens\":$output,\"total_tokens\":$((input + output))}}}}" > "$path"
+    "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":$input,\"cached_input_tokens\":$cached,\"cache_write_input_tokens\":$writes,\"output_tokens\":$output,\"total_tokens\":$((input + output))},\"last_token_usage\":{\"input_tokens\":$input,\"cached_input_tokens\":$cached,\"cache_write_input_tokens\":$writes,\"output_tokens\":$output,\"total_tokens\":$((input + output))}}}}" > "$path"
 }
 
 assert_cost() {
@@ -46,6 +47,66 @@ assert_cost astra-boundary '$2.32'
 
 make_long_context_rollout astra-above-boundary gpt-6-astra 272001 100000 10000
 assert_cost astra-above-boundary '$4.39'
+
+make_rollout sol6 gpt-6-sol 1000000 200000 10000
+assert_cost sol6 '$1.74'
+make_rollout luna6 gpt-6-luna 1000000 200000 10000
+assert_cost luna6 '$0.09'
+make_long_context_rollout sol6-long gpt-6-sol 300000 100000 10000
+assert_cost sol6-long '$0.99'
+make_long_context_rollout luna6-long gpt-6-luna 300000 100000 10000
+assert_cost luna6-long '$0.05'
+make_long_context_rollout sol6-boundary gpt-6-sol 272000 100000 10000
+assert_cost sol6-boundary '$0.46'
+make_long_context_rollout sol6-above-boundary gpt-6-sol 272001 100000 10000
+assert_cost sol6-above-boundary '$0.88'
+
+make_long_context_rollout writes gpt-6-sol 100000 20000 10000 50000
+assert_cost writes '$0.29'
+make_long_context_rollout writes-long gpt-6-sol 300000 100000 10000 100000
+assert_cost writes-long '$1.09'
+make_long_context_rollout writes-astra gpt-6-astra 100000 20000 10000 50000
+assert_cost writes-astra '$1.45'
+make_long_context_rollout writes-luna gpt-6-luna 1000000 200000 10000 500000
+assert_cost writes-luna '$0.20'
+make_long_context_rollout writes-sol5 gpt-5.6-sol 100000 20000 10000 50000
+assert_cost writes-sol5 '$0.58'
+
+make_long_context_rollout cyber6 gpt-5.6-cyber 300000 100000 10000 100000
+assert_cost cyber6 '$3.69'
+make_long_context_rollout cyber5 gpt-5.5-cyber 300000 100000 10000 100000
+assert_cost cyber5 '$3.38'
+make_long_context_rollout daybreak-blue gpt-daybreak-blue-latest 100000 20000 10000 50000
+assert_cost daybreak-blue '$0.58'
+make_long_context_rollout daybreak-red gpt-daybreak-red-latest 300000 100000 10000 100000
+assert_cost daybreak-red '$3.69'
+
+make_rollout o4 o4-mini 1000000 200000 10000
+assert_cost o4 '$0.98'
+make_rollout o4-snapshot o4-mini-2025-04-16 1000000 200000 10000
+assert_cost o4-snapshot '$0.98'
+make_long_context_rollout no-long-premium gpt-5.4-mini 300000 100000 10000
+assert_cost no-long-premium '$0.20'
+
+make_rollout research3 o3-deep-research 1000000 200000 10000
+assert_cost research3 '$8.90'
+make_rollout research4 o4-mini-deep-research 1000000 200000 10000
+assert_cost research4 '$1.78'
+make_rollout computer computer-use-preview 1000000 0 10000
+assert_cost computer '$3.12'
+
+# Older rollouts can have cumulative usage without last_token_usage.
+write_totals_path="$fixture/sessions/2026/07/23/rollout-2026-07-23T00-00-00-write-totals.jsonl"
+printf '%s\n' \
+  '{"type":"turn_context","payload":{"model":"gpt-6-sol"}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100000,"cached_input_tokens":20000,"cache_write_input_tokens":50000,"output_tokens":10000}}}}' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200000,"cached_input_tokens":40000,"cache_write_input_tokens":100000,"output_tokens":20000}}}}' \
+  > "$write_totals_path"
+assert_cost write-totals '$0.58'
+printf '%s\n' \
+  '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":300000,"cached_input_tokens":100000,"cache_write_input_tokens":250000,"output_tokens":30000}}}}' \
+  >> "$write_totals_path"
+assert_cost write-totals '!!$0.58'
 
 make_rollout root gpt-5.6-sol 1000000 200000 10000
 assert_cost root '$3.48'
@@ -93,16 +154,16 @@ import sys
 path = sys.argv[1]
 with open(path, encoding="utf-8") as handle:
     cached = json.load(handle)
-cached["version"] = 5
+cached["version"] = 6
 cached["cost"] = "!!$0.00"
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(cached, handle)
     handle.write("\n")
 PY
 stale_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ "$stale_cached" = '$7.14' ] || { printf 'version 5 cache was not invalidated: %s\n' "$stale_cached" >&2; exit 1; }
-unchanged_v6="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ -z "$unchanged_v6" ] || { printf 'version 6 cache should be silent: %s\n' "$unchanged_v6" >&2; exit 1; }
+[ "$stale_cached" = '$7.14' ] || { printf 'version 6 cache was not invalidated: %s\n' "$stale_cached" >&2; exit 1; }
+unchanged_v7="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
+[ -z "$unchanged_v7" ] || { printf 'version 7 cache should be silent: %s\n' "$unchanged_v7" >&2; exit 1; }
 
 metadata_fixture="$(mktemp -d)"
 make_rollout_at() {

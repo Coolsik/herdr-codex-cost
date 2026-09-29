@@ -4,6 +4,26 @@
 
 현재 Herdr pane에서 실행 중인 Codex 세션과 그 하위 에이전트의 누적 API 환산 비용을 계산해 Agent 사이드바에 표시하는 Herdr 플러그인입니다. `tmux-statusline`의 `codex-session-usage` 계산 방식과 모델 단가표를 기반으로 하며, 실제 ChatGPT/Codex 구독 청구액이 아니라 공개 API Standard 요금으로 환산한 추정치입니다.
 
+## 모델 요금
+
+[공식 Standard API 가격표](https://developers.openai.com/api/docs/pricing)를
+2026-09-29 기준으로 반영합니다. 주요 신규 모델의 단가는 100만 토큰당 USD입니다.
+
+| 모델 | 입력 | 캐시 읽기 | 캐시 쓰기 | 출력 |
+| --- | ---: | ---: | ---: | ---: |
+| GPT-6 Sol | $2.00 | $0.20 | $2.50 | $10.00 |
+| GPT-6 Luna | $0.10 | $0.01 | $0.125 | $0.50 |
+| GPT-5.6 Cyber | $12.50 | $1.25 | $15.625 | $75.00 |
+| GPT-5.5 Cyber | $12.50 | $1.25 | 일반 입력 단가 | $75.00 |
+
+GPT-6 Astra와 기존 GPT-5.6 모델도 지원합니다. Daybreak blue/red 별칭은 각각
+GPT-5.6 Sol/Cyber 요금으로 계산합니다. GPT-6, GPT-5.6 Sol/Terra/Luna,
+GPT-5.5 및 GPT-5.4 기본/Pro 모델은 요청 입력이 272,000 토큰을 초과하면
+입력·캐시 단가에 2배, 출력 단가에 1.5배를 적용합니다.
+[캐시 쓰기](https://developers.openai.com/api/docs/guides/prompt-caching)는
+로그의 `cache_write_input_tokens`가 있을 때 해당 단가로 계산합니다.
+과거 로그도 현재 단가로 환산하며, Fast/Batch/Flex 요금은 적용하지 않습니다.
+
 ## 요구 사항
 
 - Herdr 0.7.0 이상

@@ -6,6 +6,26 @@ A Herdr plugin that calculates the estimated API-equivalent cost of the Codex se
 
 The calculation is based on the model pricing and aggregation behavior from `tmux-statusline`'s `codex-session-usage`. The displayed amount is an estimate using public Standard API prices, not the actual amount charged for a ChatGPT or Codex subscription.
 
+## Model pricing
+
+Rates follow the [official Standard API price list](https://developers.openai.com/api/docs/pricing),
+checked on 2026-09-29. Newly supported model rates are USD per million tokens:
+
+| Model | Input | Cache read | Cache write | Output |
+| --- | ---: | ---: | ---: | ---: |
+| GPT-6 Sol | $2.00 | $0.20 | $2.50 | $10.00 |
+| GPT-6 Luna | $0.10 | $0.01 | $0.125 | $0.50 |
+| GPT-5.6 Cyber | $12.50 | $1.25 | $15.625 | $75.00 |
+| GPT-5.5 Cyber | $12.50 | $1.25 | Ordinary input rate | $75.00 |
+
+GPT-6 Astra and existing GPT-5.6 models remain supported. Daybreak blue/red
+aliases use GPT-5.6 Sol/Cyber rates respectively. For GPT-6, GPT-5.6 Sol/Terra/Luna,
+GPT-5.5 and GPT-5.4 base/Pro models, requests above 272,000 input tokens use
+2x input/cache rates and 1.5x output rates.
+[Cache writes](https://developers.openai.com/api/docs/guides/prompt-caching)
+use the applicable rate when `cache_write_input_tokens` is recorded in the log.
+Historical logs are also valued at current rates; Fast/Batch/Flex rates do not apply.
+
 ## Requirements
 
 - Herdr 0.7.0 or later
