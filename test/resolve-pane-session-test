@@ -22,13 +22,14 @@ cat > "$fixture/herdr" <<SH
 #!/usr/bin/env bash
 set -euo pipefail
 case "\$1 \$2" in
-  "pane get") printf '%s\n' '{"result":{"pane":{"cwd":"$fixture/project"}}}' ;;
+  "pane get") printf '%s\n' '{"result":{"pane":{"cwd":"$fixture/project","terminal_title_stripped":"Cost calculation | project"}}}' ;;
   "pane read")
     case "\${PANE_TEXT_MODE:-unique}" in
       unique) printf '%s\n' 'gpt-5.6-sol · 019f925b-d970-7651-b562-df688…' ;;
       short) printf '%s\n' 'gpt-5.6-sol · 019f925b-d970-7651-b562-…' ;;
       full) printf '%s\n' 'gpt-5.6-sol · 019f925b-d970-7651-b562-df688dd54435' ;;
       absent) printf '%s\n' 'gpt-5.6-sol · no thread here' ;;
+      empty) : ;;
     esac
     ;;
   *) exit 1 ;;
@@ -47,9 +48,42 @@ run_resolver() {
 [ -z "$(PANE_TEXT_MODE=absent run_resolver)" ]
 
 write_rollout \
-  "$codex_home/archived_sessions/rollout-2026-07-24T13-23-00-019f925b-d970-7651-b562-df688aaaaaaaa.jsonl" \
-  "019f925b-d970-7651-b562-df688aaaaaaaa" \
+  "$codex_home/archived_sessions/rollout-2026-07-24T13-23-00-019f925b-d970-7651-b562-df688aaaaaaa.jsonl" \
+  "019f925b-d970-7651-b562-df688aaaaaaa" \
   "$fixture/project"
 [ -z "$(run_resolver)" ]
+
+python3 - "$codex_home" "$fixture/project" <<'PY'
+import sqlite3
+import sys
+from pathlib import Path
+
+home, cwd = sys.argv[1:]
+with sqlite3.connect(Path(home) / "state_5.sqlite") as db:
+    db.execute("create table threads(id text, cwd text, name text)")
+    db.execute("insert into threads values (?, ?, ?)",
+               ("019f925b-d970-7651-b562-df688dd54435", cwd, "Cost calculation"))
+    db.execute("insert into threads values (?, ?, ?)",
+               ("019f925b-d970-7651-b562-df688aaaaaaa", cwd + "-other", "Cost calculation"))
+PY
+actual="$(PANE_TEXT_MODE=absent run_resolver)"
+[ "$actual" = '019f925b-d970-7651-b562-df688dd54435' ] || {
+  printf 'title fallback without a visible thread ID: expected session, got <%s>\n' "$actual" >&2
+  exit 1
+}
+# A visible but ambiguous ID must not be overridden by the title.
+[ -z "$(run_resolver)" ]
+[ "$(PANE_TEXT_MODE=empty run_resolver)" = '019f925b-d970-7651-b562-df688dd54435' ]
+
+python3 - "$codex_home" "$fixture/project" <<'PY'
+import sqlite3
+import sys
+from pathlib import Path
+
+home, cwd = sys.argv[1:]
+with sqlite3.connect(Path(home) / "state_5.sqlite") as db:
+    db.execute("update threads set cwd = ?", (cwd,))
+PY
+[ -z "$(PANE_TEXT_MODE=absent run_resolver)" ]
 
 printf 'resolve pane session tests passed\n'

@@ -23,17 +23,20 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 pane_json="$("$herdr_bin" pane get "$pane_id" 2>/dev/null || true)"
 pane_cwd="$(jq -r '.result.pane.cwd // empty' <<< "$pane_json")"
+pane_title="$(jq -r '.result.pane.terminal_title_stripped // empty' <<< "$pane_json")"
 [ -n "$pane_cwd" ] || exit 0
 pane_text="$("$herdr_bin" pane read "$pane_id" --source visible --lines 16 --format text 2>/dev/null || true)"
-[ -n "$pane_text" ] || exit 0
 
-python3 - "$codex_home" "$pane_cwd" "$pane_text" <<'PY'
+python3 - "$codex_home" "$pane_cwd" "$pane_text" "$pane_title" <<'PY'
+import glob
 import json
 import os
 import re
+import sqlite3
 import sys
+from contextlib import closing
 
-home, pane_cwd, pane_text = sys.argv[1:]
+home, pane_cwd, pane_text, pane_title = sys.argv[1:]
 full = re.compile(r"(?<![0-9a-f])([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![0-9a-f])")
 truncated = re.compile(
     r"(?<![0-9a-f])([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{0,11})(?:…|\.{3})"
@@ -42,11 +45,38 @@ matches = []
 for line in pane_text.splitlines():
     matches.extend(match.group(1) for match in full.finditer(line))
     matches.extend(match.group(1) for match in truncated.finditer(line))
-if not matches:
-    raise SystemExit(0)
-prefix = matches[-1]
-
 expected_cwd = os.path.realpath(pane_cwd)
+if matches:
+    prefix = matches[-1]
+else:
+    # App-server hooks may lack the TUI's Herdr environment. Match the exact
+    # terminal title and cwd; never guess the newest session in a directory.
+    title_candidates = set()
+    suffix = " | " + os.path.basename(os.path.normpath(pane_cwd))
+    if not pane_title.endswith(suffix):
+        raise SystemExit(0)
+    name = pane_title[:-len(suffix)]
+    if not name:
+        raise SystemExit(0)
+    for database in glob.glob(os.path.join(home, "state_*.sqlite")):
+        try:
+            with closing(sqlite3.connect(f"file:{database}?mode=ro", uri=True)) as db:
+                for thread_id, cwd in db.execute(
+                    "select id, cwd from threads where name = ?", (name,)
+                ):
+                    if (
+                        isinstance(thread_id, str)
+                        and full.fullmatch(thread_id)
+                        and isinstance(cwd, str)
+                        and os.path.realpath(cwd) == expected_cwd
+                    ):
+                        title_candidates.add(thread_id)
+        except sqlite3.Error:
+            continue
+    if len(title_candidates) != 1:
+        raise SystemExit(0)
+    prefix = title_candidates.pop()
+
 candidates = []
 for base_name in ("sessions", "archived_sessions"):
     base = os.path.join(home, base_name)

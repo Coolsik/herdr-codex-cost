@@ -80,6 +80,10 @@ herdr plugin action invoke dev.herdr-codex-cost.refresh
   prefix from the Codex pane status line and checks it against rollout IDs and
   working directories. The fallback is accepted only when exactly one rollout
   matches; otherwise `session?` is retained.
+  If no ID is visible, it matches the terminal title against session names and
+  working directories in Codex's state database, then verifies the unique match
+  against rollout metadata. This also supports shared app-server sessions whose
+  hooks do not inherit the pane environment.
 
 ## Testing
 
@@ -88,6 +92,7 @@ herdr plugin action invoke dev.herdr-codex-cost.refresh
 ./test/codex-hook-test
 ./test/poll-cost-test
 ./test/update-cost-test
+./test/resolve-pane-session-test
 ```
 
 ## Publishing

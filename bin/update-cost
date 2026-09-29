@@ -76,7 +76,7 @@ update_pane() {
   fi
   if [ -z "$session_id" ]; then
     record_diagnostic "$pane_id" "missing_agent_session" \
-      "Herdr did not associate this Codex pane with a thread ID and no unique status-line fallback matched."
+      "Herdr did not associate this Codex pane with a thread ID and no unique status-line or title fallback matched."
     if [ -z "$existing_cost" ] || [ "$existing_cost" = '…' ]; then
       "$herdr_bin" pane report-metadata "$pane_id" --source herdr-codex-cost --token 'cost=session?' >/dev/null
     fi

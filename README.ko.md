@@ -64,6 +64,9 @@ herdr plugin action invoke dev.herdr-codex-cost.refresh
 Herdr의 세션 연결 정보가 없으면 Codex pane 상태줄의 thread ID prefix를 읽고
 rollout의 전체 ID와 작업 디렉터리를 대조합니다. 정확히 하나만 일치할 때만
 fallback을 사용하며, 일치하지 않거나 후보가 여러 개면 `session?`를 유지합니다.
+상태줄에 ID가 없으면 터미널 제목을 Codex 상태 DB의 세션 이름 및 작업 경로와
+대조하고, 하나의 세션만 일치하며 rollout 메타데이터로 검증될 때 사용합니다.
+따라서 pane 환경변수가 전달되지 않는 공용 app-server에서도 비용을 찾을 수 있습니다.
 
 ## 테스트
 
@@ -72,6 +75,7 @@ fallback을 사용하며, 일치하지 않거나 후보가 여러 개면 `sessio
 ./test/codex-hook-test
 ./test/poll-cost-test
 ./test/update-cost-test
+./test/resolve-pane-session-test
 ```
 
 ## 배포
