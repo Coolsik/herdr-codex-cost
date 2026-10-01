@@ -48,6 +48,19 @@ assert_cost astra-boundary '$2.32'
 make_long_context_rollout astra-above-boundary gpt-6-astra 272001 100000 10000
 assert_cost astra-above-boundary '$4.39'
 
+make_rollout sol61 gpt-6.1-sol 1000000 200000 10000
+assert_cost sol61 '$1.72'
+make_long_context_rollout sol61-long gpt-6.1-sol 300000 100000 10000
+assert_cost sol61-long '$0.97'
+make_long_context_rollout sol61-boundary gpt-6.1-sol 272000 100000 10000
+assert_cost sol61-boundary '$0.45'
+make_long_context_rollout sol61-above-boundary gpt-6.1-sol 272001 100000 10000
+assert_cost sol61-above-boundary '$0.86'
+make_long_context_rollout sol61-cache-short gpt-6.1-sol 100000 20000 10000 50000
+assert_cost sol61-cache-short '$0.29'
+make_long_context_rollout sol61-cache-long gpt-6.1-sol 300000 100000 10000 100000
+assert_cost sol61-cache-long '$1.07'
+
 make_rollout sol6 gpt-6-sol 1000000 200000 10000
 assert_cost sol6 '$1.74'
 make_rollout luna6 gpt-6-luna 1000000 200000 10000
@@ -154,16 +167,16 @@ import sys
 path = sys.argv[1]
 with open(path, encoding="utf-8") as handle:
     cached = json.load(handle)
-cached["version"] = 6
+cached["version"] = 7
 cached["cost"] = "!!$0.00"
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(cached, handle)
     handle.write("\n")
 PY
 stale_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ "$stale_cached" = '$7.14' ] || { printf 'version 6 cache was not invalidated: %s\n' "$stale_cached" >&2; exit 1; }
-unchanged_v7="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ -z "$unchanged_v7" ] || { printf 'version 7 cache should be silent: %s\n' "$unchanged_v7" >&2; exit 1; }
+[ "$stale_cached" = '$7.14' ] || { printf 'version 7 cache was not invalidated: %s\n' "$stale_cached" >&2; exit 1; }
+unchanged_v8="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
+[ -z "$unchanged_v8" ] || { printf 'version 8 cache should be silent: %s\n' "$unchanged_v8" >&2; exit 1; }
 
 metadata_fixture="$(mktemp -d)"
 make_rollout_at() {
