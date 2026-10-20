@@ -9,9 +9,9 @@ The calculation is based on the model pricing and aggregation behavior from `tmu
 ## Model pricing
 
 Rates follow the [official Standard API price list](https://developers.openai.com/api/docs/pricing),
-checked on 2026-10-01. Newly supported model rates are USD per million tokens:
+checked on 2026-10-20. Newly supported model rates are USD per million tokens:
 
-| Model | Input | Cache read | Cache write | Output |
+| Model | Input | Cache read | Cache write (30m) | Output |
 | --- | ---: | ---: | ---: | ---: |
 | GPT-6.1 Sol | $2.00 | $0.10 | $2.50 | $10.00 |
 | GPT-6 Sol | $2.00 | $0.20 | $2.50 | $10.00 |
@@ -24,8 +24,15 @@ aliases use GPT-5.6 Sol/Cyber rates respectively. For GPT-6.1 Sol, GPT-6, GPT-5.
 GPT-5.5 and GPT-5.4 base/Pro models, requests above 272,000 input tokens use
 2x input/cache rates and 1.5x output rates.
 [Cache writes](https://developers.openai.com/api/docs/guides/prompt-caching)
-use the applicable rate when `cache_write_input_tokens` is recorded in the log.
-Historical logs are also valued at current rates; Fast/Batch/Flex rates do not apply.
+on supported models use the 30-minute rate for legacy `cache_write_input_tokens` counters.
+When rollout usage preserves the official Responses API
+`input_tokens_details.cache_write_tokens_details` breakdown, `ttl_30m_tokens`
+and `ttl_12h_tokens` are charged at 1.25x and 2.5x input respectively, including
+long-context multipliers. The components replace ordinary input and are not
+counted again as total writes. Logs without this breakdown retain the 30-minute
+estimate; 12-hour or mixed-lifetime costs cannot be recovered from a total alone.
+Malformed or conflicting breakdowns are excluded and flagged with `!!`.
+Historical logs are also valued at current rates; Fast/Ultrafast/Batch/Flex rates and subscription credit multipliers do not apply.
 
 ## Requirements
 

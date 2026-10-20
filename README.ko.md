@@ -7,9 +7,9 @@
 ## 모델 요금
 
 [공식 Standard API 가격표](https://developers.openai.com/api/docs/pricing)를
-2026-10-01 기준으로 반영합니다. 주요 신규 모델의 단가는 100만 토큰당 USD입니다.
+2026-10-20 기준으로 반영합니다. 주요 신규 모델의 단가는 100만 토큰당 USD입니다.
 
-| 모델 | 입력 | 캐시 읽기 | 캐시 쓰기 | 출력 |
+| 모델 | 입력 | 캐시 읽기 | 캐시 쓰기 (30분) | 출력 |
 | --- | ---: | ---: | ---: | ---: |
 | GPT-6.1 Sol | $2.00 | $0.10 | $2.50 | $10.00 |
 | GPT-6 Sol | $2.00 | $0.20 | $2.50 | $10.00 |
@@ -22,8 +22,15 @@ GPT-5.6 Sol/Cyber 요금으로 계산합니다. GPT-6.1 Sol, GPT-6, GPT-5.6 Sol/
 GPT-5.5 및 GPT-5.4 기본/Pro 모델은 요청 입력이 272,000 토큰을 초과하면
 입력·캐시 단가에 2배, 출력 단가에 1.5배를 적용합니다.
 [캐시 쓰기](https://developers.openai.com/api/docs/guides/prompt-caching)는
-로그의 `cache_write_input_tokens`가 있을 때 해당 단가로 계산합니다.
-과거 로그도 현재 단가로 환산하며, Fast/Batch/Flex 요금은 적용하지 않습니다.
+지원 모델의 기존 `cache_write_input_tokens` 카운터에는 30분 단가를 적용합니다.
+rollout 사용량에 공식 Responses API의
+`input_tokens_details.cache_write_tokens_details` 내역이 보존되어 있으면
+`ttl_30m_tokens`와 `ttl_12h_tokens`에 각각 입력 단가의 1.25배와 2.5배를
+적용하며, 긴 컨텍스트 배수도 반영합니다. 두 항목은 일반 입력을 대체하며
+전체 캐시 쓰기와 중복 계산하지 않습니다. 이 내역이 없는 로그는 기존 30분
+추정치를 유지합니다. 합계만으로는 12시간 또는 혼합 보존 시간의 비용을
+복원할 수 없습니다. 잘못되거나 충돌하는 내역은 제외하고 `!!`로 표시합니다.
+과거 로그도 현재 단가로 환산하며, Fast/Ultrafast/Batch/Flex 요금과 구독 크레딧 배수는 적용하지 않습니다.
 
 ## 요구 사항
 

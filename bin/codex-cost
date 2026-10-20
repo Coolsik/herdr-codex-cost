@@ -35,13 +35,13 @@ from collections import defaultdict, deque
 
 home, root_id, cache_path, changed_only_raw = sys.argv[1:]
 changed_only = changed_only_raw == "1"
-CACHE_VERSION = 8
+CACHE_VERSION = 9
 valid_id = re.compile(r"^[A-Za-z0-9-]+$")
 if not valid_id.fullmatch(root_id):
     raise SystemExit(0)
 
 # Standard API prices per million tokens: input, cached input, output.
-# https://developers.openai.com/api/docs/pricing (2026-10-01)
+# https://developers.openai.com/api/docs/pricing (2026-10-20)
 # Listed long-context models use 2x input and 1.5x output above 272K.
 LONG_CONTEXT_INPUT_TOKENS = 272_000
 LONG_CONTEXT_INPUT_MULTIPLIER = 2.0
@@ -238,13 +238,45 @@ if cache_path:
         pass
 
 
+def normalize_usage(usage):
+    # Accept the documented Responses API breakdown when preserved in a rollout.
+    # Legacy Codex flat counters have no lifetime split and retain the 30m rate.
+    keys = ("input_tokens", "cached_input_tokens", "cache_write_input_tokens", "output_tokens")
+    result = {key: usage.get(key, 0) for key in keys}
+    result["write_12h"] = 0
+    details = usage.get("input_tokens_details", {})
+    if not isinstance(details, dict):
+        return None
+    for flat, nested in (("cached_input_tokens", "cached_tokens"),
+                         ("cache_write_input_tokens", "cache_write_tokens")):
+        if nested in details:
+            if flat in usage and usage[flat] != details[nested]:
+                return None
+            result[flat] = details[nested]
+    split = details.get("cache_write_tokens_details")
+    if "cache_write_tokens_details" in details:
+        if not isinstance(split, dict):
+            return None
+        counts = [split.get(key) for key in ("ttl_30m_tokens", "ttl_12h_tokens")]
+        if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in counts):
+            return None
+        if "cache_write_tokens" not in details or sum(counts) != result["cache_write_input_tokens"]:
+            return None
+        result["write_12h"] = counts[1]
+    if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in result.values()):
+        return None
+    if result["cached_input_tokens"] + result["cache_write_input_tokens"] > result["input_tokens"]:
+        return None
+    return result
+
+
 def parse_rollout(path):
     model = ""
     model_seen = False
     fork_baseline_eligible = False
     pending_pre_model_usage = False
     previous = None
-    totals = {"input_tokens": 0, "cached_input_tokens": 0, "cache_write_input_tokens": 0, "output_tokens": 0}
+    totals = {"input_tokens": 0, "cached_input_tokens": 0, "cache_write_input_tokens": 0, "output_tokens": 0, "write_12h": 0}
     known_cost = estimated_cost = 0.0
     complete = True
     with open(path, encoding="utf-8", errors="replace") as handle:
@@ -281,11 +313,8 @@ def parse_rollout(path):
             usage = (payload.get("info") or {}).get("total_token_usage")
             if not isinstance(usage, dict):
                 continue
-            current = {key: usage.get(key, 0) for key in totals}
-            if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in current.values()):
-                complete = False
-                continue
-            if current["cached_input_tokens"] + current["cache_write_input_tokens"] > current["input_tokens"]:
+            current = normalize_usage(usage)
+            if current is None:
                 complete = False
                 continue
             if previous is not None and any(current[key] < previous[key] for key in totals):
@@ -299,14 +328,14 @@ def parse_rollout(path):
             last_usage = (payload.get("info") or {}).get("last_token_usage")
             request_usage = None
             if isinstance(last_usage, dict):
-                candidate = {key: last_usage.get(key, 0) for key in totals}
-                if (
-                    all(isinstance(value, int) and not isinstance(value, bool) and value >= 0
-                        for value in candidate.values())
-                    and candidate["cached_input_tokens"] + candidate["cache_write_input_tokens"] <= candidate["input_tokens"]
-                ):
-                    request_usage = candidate
+                request_usage = normalize_usage(last_usage)
+                if request_usage is None:
+                    complete = False
+                    continue
             billable = request_usage or delta
+            if billable["write_12h"] > billable["cache_write_input_tokens"]:
+                complete = False
+                continue
             rates = RATES.get(model)
             estimated = False
             if rates is None:
@@ -327,9 +356,11 @@ def parse_rollout(path):
             cost = ((billable["input_tokens"] - billable["cached_input_tokens"]) * input_rate
                     + billable["cached_input_tokens"] * cache_rate
                     + billable["output_tokens"] * output_rate) / 1_000_000
-            # Writes replace ordinary input at 1.25x, so add only the 0.25x premium.
+            # Writes replace ordinary input: 30m adds 0.25x, 12h adds 1.5x.
+            # The 12h subset already receives 0.25x through the total writes.
             if model in CACHE_WRITE_MODELS:
-                cost += billable["cache_write_input_tokens"] * input_rate * 0.25 / 1_000_000
+                cost += (billable["cache_write_input_tokens"] * 0.25
+                         + billable["write_12h"] * 1.25) * input_rate / 1_000_000
             if estimated:
                 estimated_cost += cost
             else:

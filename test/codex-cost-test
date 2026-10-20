@@ -94,6 +94,74 @@ assert_cost daybreak-blue '$0.58'
 make_long_context_rollout daybreak-red gpt-daybreak-red-latest 300000 100000 10000 100000
 assert_cost daybreak-red '$3.69'
 
+# Official Responses API lifetime details, when preserved in rollout usage.
+python3 - "$fixture" <<'PYTEST'
+import copy
+import json
+import sys
+from pathlib import Path
+base = Path(sys.argv[1]) / "sessions/2026/07/23"
+def write(name, usages, model="gpt-6.1-sol", last=True):
+    events = [{"type": "turn_context", "payload": {"model": model}}]
+    for usage in usages:
+        info = {"total_token_usage": usage}
+        if last:
+            info["last_token_usage"] = usage
+        events.append({"type": "event_msg", "payload": {"type": "token_count", "info": info}})
+    (base / f"rollout-2026-07-23T00-00-00-{name}.jsonl").write_text(
+        "".join(json.dumps(event) + "\n" for event in events))
+def usage(input=100000, short=30000, long=20000):
+    return {"input_tokens": input, "output_tokens": 10000,
+            "input_tokens_details": {"cached_tokens": 20000,
+                "cache_write_tokens": short + long,
+                "cache_write_tokens_details": {"ttl_30m_tokens": short, "ttl_12h_tokens": long}}}
+write("mixed-writes", [usage()])
+write("all-12h", [usage(short=0, long=50000)])
+write("all-30m", [usage(short=50000, long=0)])
+write("mixed-long", [usage(input=300000)])
+write("mixed-boundary", [usage(input=272000)])
+write("mixed-above", [usage(input=272001)])
+write("mixed-alias", [usage()], model="gpt-daybreak-blue-latest")
+write("mixed-old-model", [usage()], model="gpt-5.5")
+first = usage()
+second = usage(input=200000, short=60000, long=40000)
+second["output_tokens"] = 20000
+second["input_tokens_details"]["cached_tokens"] = 40000
+write("mixed-cumulative", [first, second], last=False)
+for name, value in (("negative", -1), ("boolean", True), ("missing", None), ("mismatch", 1)):
+    bad = copy.deepcopy(second)
+    bad["input_tokens_details"]["cache_write_tokens_details"]["ttl_12h_tokens"] = value
+    write("split-" + name, [first, bad])
+bad = copy.deepcopy(second)
+bad["cache_write_input_tokens"] = 1
+write("split-conflict", [first, bad])
+# A Codex cumulative counter can stay flat while the request preserves API details.
+write("request-split", [first])
+path = base / "rollout-2026-07-23T00-00-00-request-split.jsonl"
+events = [json.loads(line) for line in path.read_text().splitlines()]
+info = events[-1]["payload"]["info"]
+info["total_token_usage"] = {"input_tokens": 100000, "cached_input_tokens": 20000,
+                             "cache_write_input_tokens": 50000, "output_tokens": 10000}
+path.write_text("".join(json.dumps(event) + "\n" for event in events))
+info["last_token_usage"] = bad
+(base / "rollout-2026-07-23T00-00-00-malformed-request.jsonl").write_text(
+    "".join(json.dumps(event) + "\n" for event in events))
+PYTEST
+assert_cost request-split '$0.34'
+assert_cost malformed-request '!!$0.00'
+assert_cost mixed-writes '$0.34'
+assert_cost all-12h '$0.41'
+assert_cost all-30m '$0.29'
+assert_cost mixed-long '$1.42'
+assert_cost mixed-boundary '$0.68'
+assert_cost mixed-above '$1.31'
+assert_cost mixed-alias '$0.68'
+assert_cost mixed-old-model '$0.71'
+assert_cost mixed-cumulative '$0.67'
+for invalid in negative boolean missing mismatch conflict; do
+  assert_cost "split-$invalid" '!!$0.34'
+done
+
 make_rollout o4 o4-mini 1000000 200000 10000
 assert_cost o4 '$0.98'
 make_rollout o4-snapshot o4-mini-2025-04-16 1000000 200000 10000
@@ -167,16 +235,16 @@ import sys
 path = sys.argv[1]
 with open(path, encoding="utf-8") as handle:
     cached = json.load(handle)
-cached["version"] = 7
+cached["version"] = 8
 cached["cost"] = "!!$0.00"
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(cached, handle)
     handle.write("\n")
 PY
 stale_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ "$stale_cached" = '$7.14' ] || { printf 'version 7 cache was not invalidated: %s\n' "$stale_cached" >&2; exit 1; }
-unchanged_v8="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ -z "$unchanged_v8" ] || { printf 'version 8 cache should be silent: %s\n' "$unchanged_v8" >&2; exit 1; }
+[ "$stale_cached" = '$7.14' ] || { printf 'version 8 cache was not invalidated: %s\n' "$stale_cached" >&2; exit 1; }
+unchanged_v9="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
+[ -z "$unchanged_v9" ] || { printf 'version 9 cache should be silent: %s\n' "$unchanged_v9" >&2; exit 1; }
 
 metadata_fixture="$(mktemp -d)"
 make_rollout_at() {
