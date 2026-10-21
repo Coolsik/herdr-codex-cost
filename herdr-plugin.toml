@@ -1,6 +1,6 @@
 id = "dev.herdr-codex-cost"
 name = "Codex Cost"
-version = "0.3.6"
+version = "0.3.7"
 min_herdr_version = "0.7.0"
 description = "Show each Codex pane's estimated session cost in the Herdr sidebar."
 platforms = ["linux", "macos"]

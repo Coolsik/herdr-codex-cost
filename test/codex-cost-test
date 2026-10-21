@@ -86,13 +86,17 @@ make_long_context_rollout writes-sol5 gpt-5.6-sol 100000 20000 10000 50000
 assert_cost writes-sol5 '$0.58'
 
 make_long_context_rollout cyber6 gpt-5.6-cyber 300000 100000 10000 100000
-assert_cost cyber6 '$3.69'
+assert_cost cyber6 '$7.00'
+make_long_context_rollout cyber6-boundary gpt-5.6-cyber 272000 100000 10000 100000
+assert_cost cyber6-boundary '$3.34'
+make_long_context_rollout cyber6-above gpt-5.6-cyber 272001 100000 10000 100000
+assert_cost cyber6-above '$6.30'
 make_long_context_rollout cyber5 gpt-5.5-cyber 300000 100000 10000 100000
 assert_cost cyber5 '$3.38'
 make_long_context_rollout daybreak-blue gpt-daybreak-blue-latest 100000 20000 10000 50000
 assert_cost daybreak-blue '$0.58'
 make_long_context_rollout daybreak-red gpt-daybreak-red-latest 300000 100000 10000 100000
-assert_cost daybreak-red '$3.69'
+assert_cost daybreak-red '$7.00'
 
 # Official Responses API lifetime details, when preserved in rollout usage.
 python3 - "$fixture" <<'PYTEST'
@@ -122,6 +126,8 @@ write("mixed-long", [usage(input=300000)])
 write("mixed-boundary", [usage(input=272000)])
 write("mixed-above", [usage(input=272001)])
 write("mixed-alias", [usage()], model="gpt-daybreak-blue-latest")
+write("cyber6-lifetimes", [usage(input=300000)], model="gpt-5.6-cyber")
+write("red-lifetimes", [usage(input=300000)], model="gpt-daybreak-red-latest")
 write("mixed-old-model", [usage()], model="gpt-5.5")
 first = usage()
 second = usage(input=200000, short=60000, long=40000)
@@ -156,6 +162,8 @@ assert_cost mixed-long '$1.42'
 assert_cost mixed-boundary '$0.68'
 assert_cost mixed-above '$1.31'
 assert_cost mixed-alias '$0.68'
+assert_cost cyber6-lifetimes '$9.11'
+assert_cost red-lifetimes '$9.11'
 assert_cost mixed-old-model '$0.71'
 assert_cost mixed-cumulative '$0.67'
 for invalid in negative boolean missing mismatch conflict; do
@@ -235,16 +243,16 @@ import sys
 path = sys.argv[1]
 with open(path, encoding="utf-8") as handle:
     cached = json.load(handle)
-cached["version"] = 8
+cached["version"] = 9
 cached["cost"] = "!!$0.00"
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(cached, handle)
     handle.write("\n")
 PY
 stale_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ "$stale_cached" = '$7.14' ] || { printf 'version 8 cache was not invalidated: %s\n' "$stale_cached" >&2; exit 1; }
-unchanged_v9="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ -z "$unchanged_v9" ] || { printf 'version 9 cache should be silent: %s\n' "$unchanged_v9" >&2; exit 1; }
+[ "$stale_cached" = '$7.14' ] || { printf 'version 9 cache was not invalidated: %s\n' "$stale_cached" >&2; exit 1; }
+unchanged_v10="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
+[ -z "$unchanged_v10" ] || { printf 'version 10 cache should be silent: %s\n' "$unchanged_v10" >&2; exit 1; }
 
 metadata_fixture="$(mktemp -d)"
 make_rollout_at() {

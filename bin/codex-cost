@@ -35,13 +35,13 @@ from collections import defaultdict, deque
 
 home, root_id, cache_path, changed_only_raw = sys.argv[1:]
 changed_only = changed_only_raw == "1"
-CACHE_VERSION = 9
+CACHE_VERSION = 10
 valid_id = re.compile(r"^[A-Za-z0-9-]+$")
 if not valid_id.fullmatch(root_id):
     raise SystemExit(0)
 
 # Standard API prices per million tokens: input, cached input, output.
-# https://developers.openai.com/api/docs/pricing (2026-10-20)
+# https://developers.openai.com/api/docs/pricing (2026-10-21)
 # Listed long-context models use 2x input and 1.5x output above 272K.
 LONG_CONTEXT_INPUT_TOKENS = 272_000
 LONG_CONTEXT_INPUT_MULTIPLIER = 2.0
@@ -75,7 +75,9 @@ MODEL_ALIASES = {
     "gpt-daybreak-blue-latest": "gpt-5.6-sol",
     "gpt-daybreak-red-latest": "gpt-5.6-cyber",
 }
+# Cyber long-context premium: https://developers.openai.com/api/docs/models/gpt-5.6-cyber
 LONG_CONTEXT_MODELS = {
+    "gpt-5.6-cyber",
     "gpt-6.1-sol",
     "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
     "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",

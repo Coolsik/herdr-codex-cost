@@ -9,7 +9,7 @@ The calculation is based on the model pricing and aggregation behavior from `tmu
 ## Model pricing
 
 Rates follow the [official Standard API price list](https://developers.openai.com/api/docs/pricing),
-checked on 2026-10-20. Newly supported model rates are USD per million tokens:
+checked on 2026-10-21. Newly supported model rates are USD per million tokens:
 
 | Model | Input | Cache read | Cache write (30m) | Output |
 | --- | ---: | ---: | ---: | ---: |
@@ -20,9 +20,11 @@ checked on 2026-10-20. Newly supported model rates are USD per million tokens:
 | GPT-5.5 Cyber | $12.50 | $1.25 | Ordinary input rate | $75.00 |
 
 GPT-6 Astra and existing GPT-5.6 models remain supported. Daybreak blue/red
-aliases use GPT-5.6 Sol/Cyber rates respectively. For GPT-6.1 Sol, GPT-6, GPT-5.6 Sol/Terra/Luna,
+aliases use GPT-5.6 Sol/Cyber rates respectively. For GPT-6.1 Sol, GPT-6, GPT-5.6 Sol/Terra/Luna/Cyber,
 GPT-5.5 and GPT-5.4 base/Pro models, requests above 272,000 input tokens use
-2x input/cache rates and 1.5x output rates.
+2x input/cache rates and 1.5x output rates. This includes
+[GPT-5.6 Cyber](https://developers.openai.com/api/docs/models/gpt-5.6-cyber)
+and its Daybreak red alias, including both cache-write lifetimes.
 [Cache writes](https://developers.openai.com/api/docs/guides/prompt-caching)
 on supported models use the 30-minute rate for legacy `cache_write_input_tokens` counters.
 When rollout usage preserves the official Responses API
