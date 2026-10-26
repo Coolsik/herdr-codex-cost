@@ -35,13 +35,13 @@ from collections import defaultdict, deque
 
 home, root_id, cache_path, changed_only_raw = sys.argv[1:]
 changed_only = changed_only_raw == "1"
-CACHE_VERSION = 10
+CACHE_VERSION = 11
 valid_id = re.compile(r"^[A-Za-z0-9-]+$")
 if not valid_id.fullmatch(root_id):
     raise SystemExit(0)
 
 # Standard API prices per million tokens: input, cached input, output.
-# https://developers.openai.com/api/docs/pricing (2026-10-21)
+# https://developers.openai.com/api/docs/pricing (2026-10-26)
 # Listed long-context models use 2x input and 1.5x output above 272K.
 LONG_CONTEXT_INPUT_TOKENS = 272_000
 LONG_CONTEXT_INPUT_MULTIPLIER = 2.0
@@ -49,6 +49,7 @@ LONG_CONTEXT_OUTPUT_MULTIPLIER = 1.5
 RATES = {
     "gpt-6-astra": (10.0, 1.0, 50.0),
     "gpt-6.1-sol": (2.0, 0.1, 10.0),
+    "gpt-6.1-terra": (1.0, 0.05, 5.0),
     "gpt-6-sol": (2.0, 0.2, 10.0),
     "gpt-6-luna": (0.1, 0.01, 0.5),
     "gpt-5.6-sol": (4.0, 0.4, 20.0),
@@ -78,13 +79,13 @@ MODEL_ALIASES = {
 # Cyber long-context premium: https://developers.openai.com/api/docs/models/gpt-5.6-cyber
 LONG_CONTEXT_MODELS = {
     "gpt-5.6-cyber",
-    "gpt-6.1-sol",
+    "gpt-6.1-sol", "gpt-6.1-terra",
     "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
     "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
     "gpt-5.5", "gpt-5.5-pro", "gpt-5.4", "gpt-5.4-pro",
 }
 CACHE_WRITE_MODELS = {
-    "gpt-6.1-sol",
+    "gpt-6.1-sol", "gpt-6.1-terra",
     "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
     "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-cyber",
 }

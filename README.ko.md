@@ -7,18 +7,19 @@
 ## 모델 요금
 
 [공식 Standard API 가격표](https://developers.openai.com/api/docs/pricing)를
-2026-10-21 기준으로 반영합니다. 주요 신규 모델의 단가는 100만 토큰당 USD입니다.
+2026-10-26 기준으로 반영합니다. 주요 신규 모델의 단가는 100만 토큰당 USD입니다.
 
 | 모델 | 입력 | 캐시 읽기 | 캐시 쓰기 (30분) | 출력 |
 | --- | ---: | ---: | ---: | ---: |
 | GPT-6.1 Sol | $2.00 | $0.10 | $2.50 | $10.00 |
+| [GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra) | $1.00 | $0.05 | $1.25 | $5.00 |
 | GPT-6 Sol | $2.00 | $0.20 | $2.50 | $10.00 |
 | GPT-6 Luna | $0.10 | $0.01 | $0.125 | $0.50 |
 | GPT-5.6 Cyber | $12.50 | $1.25 | $15.625 | $75.00 |
 | GPT-5.5 Cyber | $12.50 | $1.25 | 일반 입력 단가 | $75.00 |
 
 GPT-6 Astra와 기존 GPT-5.6 모델도 지원합니다. Daybreak blue/red 별칭은 각각
-GPT-5.6 Sol/Cyber 요금으로 계산합니다. GPT-6.1 Sol, GPT-6, GPT-5.6 Sol/Terra/Luna/Cyber,
+GPT-5.6 Sol/Cyber 요금으로 계산합니다. GPT-6.1 Sol/Terra, GPT-6, GPT-5.6 Sol/Terra/Luna/Cyber,
 GPT-5.5 및 GPT-5.4 기본/Pro 모델은 요청 입력이 272,000 토큰을 초과하면
 입력·캐시 단가에 2배, 출력 단가에 1.5배를 적용합니다.
 [GPT-5.6 Cyber](https://developers.openai.com/api/docs/models/gpt-5.6-cyber)와

@@ -61,6 +61,20 @@ assert_cost sol61-cache-short '$0.29'
 make_long_context_rollout sol61-cache-long gpt-6.1-sol 300000 100000 10000 100000
 assert_cost sol61-cache-long '$1.07'
 
+# GPT-6.1 Terra Standard pricing, including the strict 272K boundary.
+make_rollout terra61 gpt-6.1-terra 1000000 200000 10000
+assert_cost terra61 '$0.86'
+make_long_context_rollout terra61-long gpt-6.1-terra 300000 100000 10000
+assert_cost terra61-long '$0.48'
+make_long_context_rollout terra61-boundary gpt-6.1-terra 272000 100000 10000
+assert_cost terra61-boundary '$0.23'
+make_long_context_rollout terra61-above gpt-6.1-terra 272001 100000 10000
+assert_cost terra61-above '$0.43'
+make_long_context_rollout terra61-write gpt-6.1-terra 100000 20000 10000 50000
+assert_cost terra61-write '$0.14'
+make_long_context_rollout terra61-write-long gpt-6.1-terra 300000 100000 10000 100000
+assert_cost terra61-write-long '$0.54'
+
 make_rollout sol6 gpt-6-sol 1000000 200000 10000
 assert_cost sol6 '$1.74'
 make_rollout luna6 gpt-6-luna 1000000 200000 10000
@@ -119,6 +133,10 @@ def usage(input=100000, short=30000, long=20000):
             "input_tokens_details": {"cached_tokens": 20000,
                 "cache_write_tokens": short + long,
                 "cache_write_tokens_details": {"ttl_30m_tokens": short, "ttl_12h_tokens": long}}}
+write("terra61-mixed", [usage()], model="gpt-6.1-terra")
+write("terra61-12h", [usage(short=0, long=50000)], model="gpt-6.1-terra")
+write("terra61-mixed-long", [usage(input=300000)], model="gpt-6.1-terra")
+write("terra61-12h-long", [usage(input=300000, short=0, long=50000)], model="gpt-6.1-terra")
 write("mixed-writes", [usage()])
 write("all-12h", [usage(short=0, long=50000)])
 write("all-30m", [usage(short=50000, long=0)])
@@ -153,6 +171,10 @@ info["last_token_usage"] = bad
 (base / "rollout-2026-07-23T00-00-00-malformed-request.jsonl").write_text(
     "".join(json.dumps(event) + "\n" for event in events))
 PYTEST
+assert_cost terra61-mixed '$0.17'
+assert_cost terra61-12h '$0.21'
+assert_cost terra61-mixed-long '$0.71'
+assert_cost terra61-12h-long '$0.79'
 assert_cost request-split '$0.34'
 assert_cost malformed-request '!!$0.00'
 assert_cost mixed-writes '$0.34'
@@ -243,16 +265,16 @@ import sys
 path = sys.argv[1]
 with open(path, encoding="utf-8") as handle:
     cached = json.load(handle)
-cached["version"] = 9
+cached["version"] = 10
 cached["cost"] = "!!$0.00"
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(cached, handle)
     handle.write("\n")
 PY
 stale_cached="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ "$stale_cached" = '$7.14' ] || { printf 'version 9 cache was not invalidated: %s\n' "$stale_cached" >&2; exit 1; }
-unchanged_v10="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
-[ -z "$unchanged_v10" ] || { printf 'version 10 cache should be silent: %s\n' "$unchanged_v10" >&2; exit 1; }
+[ "$stale_cached" = '$7.14' ] || { printf 'version 10 cache was not invalidated: %s\n' "$stale_cached" >&2; exit 1; }
+unchanged_v11="$("$root/bin/codex-cost" --codex-home "$fixture" --session root --cache-file "$cache_file" --changed-only)"
+[ -z "$unchanged_v11" ] || { printf 'version 11 cache should be silent: %s\n' "$unchanged_v11" >&2; exit 1; }
 
 metadata_fixture="$(mktemp -d)"
 make_rollout_at() {
