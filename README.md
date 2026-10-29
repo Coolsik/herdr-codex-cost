@@ -9,7 +9,7 @@ The calculation is based on the model pricing and aggregation behavior from `tmu
 ## Model pricing
 
 Rates follow the [official Standard API price list](https://developers.openai.com/api/docs/pricing),
-checked on 2026-10-26. Newly supported model rates are USD per million tokens:
+checked on 2026-10-29. Newly supported model rates are USD per million tokens:
 
 | Model | Input | Cache read | Cache write (30m) | Output |
 | --- | ---: | ---: | ---: | ---: |

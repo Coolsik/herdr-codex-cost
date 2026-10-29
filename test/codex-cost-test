@@ -135,8 +135,8 @@ def usage(input=100000, short=30000, long=20000):
                 "cache_write_tokens_details": {"ttl_30m_tokens": short, "ttl_12h_tokens": long}}}
 write("terra61-mixed", [usage()], model="gpt-6.1-terra")
 write("terra61-12h", [usage(short=0, long=50000)], model="gpt-6.1-terra")
-write("terra61-mixed-long", [usage(input=300000)], model="gpt-6.1-terra")
-write("terra61-12h-long", [usage(input=300000, short=0, long=50000)], model="gpt-6.1-terra")
+write("terra61-long-mixed", [usage(input=300000)], model="gpt-6.1-terra")
+write("terra61-long-12h", [usage(input=300000, short=0, long=50000)], model="gpt-6.1-terra")
 write("mixed-writes", [usage()])
 write("all-12h", [usage(short=0, long=50000)])
 write("all-30m", [usage(short=50000, long=0)])
@@ -173,8 +173,8 @@ info["last_token_usage"] = bad
 PYTEST
 assert_cost terra61-mixed '$0.17'
 assert_cost terra61-12h '$0.21'
-assert_cost terra61-mixed-long '$0.71'
-assert_cost terra61-12h-long '$0.79'
+assert_cost terra61-long-mixed '$0.71'
+assert_cost terra61-long-12h '$0.79'
 assert_cost request-split '$0.34'
 assert_cost malformed-request '!!$0.00'
 assert_cost mixed-writes '$0.34'

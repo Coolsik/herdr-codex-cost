@@ -41,7 +41,7 @@ if not valid_id.fullmatch(root_id):
     raise SystemExit(0)
 
 # Standard API prices per million tokens: input, cached input, output.
-# https://developers.openai.com/api/docs/pricing (2026-10-26)
+# https://developers.openai.com/api/docs/pricing (2026-10-29)
 # Listed long-context models use 2x input and 1.5x output above 272K.
 LONG_CONTEXT_INPUT_TOKENS = 272_000
 LONG_CONTEXT_INPUT_MULTIPLIER = 2.0
