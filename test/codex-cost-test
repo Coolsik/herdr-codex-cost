@@ -133,6 +133,10 @@ def usage(input=100000, short=30000, long=20000):
             "input_tokens_details": {"cached_tokens": 20000,
                 "cache_write_tokens": short + long,
                 "cache_write_tokens_details": {"ttl_30m_tokens": short, "ttl_12h_tokens": long}}}
+write("astra62-boundary", [usage(input=272000)], model="gpt-6.2-astra")
+write("astra62-above", [usage(input=272001)], model="gpt-6.2-astra")
+write("sol62-boundary", [usage(input=272000)], model="gpt-6.2-sol")
+write("sol62-above", [usage(input=272001)], model="gpt-6.2-sol")
 write("terra61-mixed", [usage()], model="gpt-6.1-terra")
 write("terra61-12h", [usage(short=0, long=50000)], model="gpt-6.1-terra")
 write("terra61-long-mixed", [usage(input=300000)], model="gpt-6.1-terra")
@@ -171,6 +175,10 @@ info["last_token_usage"] = bad
 (base / "rollout-2026-07-23T00-00-00-malformed-request.jsonl").write_text(
     "".join(json.dumps(event) + "\n" for event in events))
 PYTEST
+assert_cost astra62-boundary '$2.72'
+assert_cost astra62-above '$5.25'
+assert_cost sol62-boundary '$0.68'
+assert_cost sol62-above '$1.31'
 assert_cost terra61-mixed '$0.17'
 assert_cost terra61-12h '$0.21'
 assert_cost terra61-long-mixed '$0.71'
